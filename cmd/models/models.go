@@ -15,8 +15,22 @@ type CapacityRoute struct {
 }
 
 type CapacitySailing struct {
+	// Deprecated compatibility fields. Their meaning changes with status:
+	// future uses the scheduled departure, current/past use the actual
+	// departure, current uses ETA for arrival, and past uses actual arrival.
 	DepartureTime string `json:"time"`
 	ArrivalTime   string `json:"arrivalTime"`
+
+	// Explicit time semantics from BC Ferries' current-conditions page. Pointer
+	// fields encode unavailable values as JSON null instead of an ambiguous
+	// empty string.
+	ScheduledDepartureTime string  `json:"scheduledDepartureTime"`
+	ActualDepartureTime    *string `json:"actualDepartureTime"`
+	EstimatedArrivalTime   *string `json:"estimatedArrivalTime"`
+	ActualArrivalTime      *string `json:"actualArrivalTime"`
+	ServiceDate            string  `json:"serviceDate"`
+	ScrapedAt              string  `json:"scrapedAt"`
+
 	SailingStatus string `json:"sailingStatus"`
 	Fill          int    `json:"fill"`
 	CarFill       int    `json:"carFill"`

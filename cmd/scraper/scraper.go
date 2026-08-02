@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	"log"
 
@@ -61,6 +62,59 @@ func MakeScheduleLink(departure, destination string) string {
  */
 func MakeSeasonalScheduleLink(departure, destination string) string {
 	return "https://www.bcferries.com/routes-fares/schedules/seasonal/" + departure + "-" + destination
+}
+
+var departedSailingPattern = regexp.MustCompile(
+	`(?i)^(?P<Scheduled>\d{1,2}:\d{2} [ap]m) Departed (?P<Actual>\d{1,2}:\d{2} [ap]m) (?P<Vessel>.+)$`,
+)
+
+var scheduledSailingPattern = regexp.MustCompile(
+	`(?i)^(?P<Scheduled>\d{1,2}:\d{2} [ap]m)(?P<Tomorrow> \(Tomorrow\))? (?P<Vessel>.+)$`,
+)
+
+var vancouverLocation = mustLoadLocation("America/Vancouver")
+
+func mustLoadLocation(name string) *time.Location {
+	location, err := time.LoadLocation(name)
+	if err != nil {
+		panic(fmt.Sprintf("load timezone %s: %v", name, err))
+	}
+	return location
+}
+
+func normalizedText(value string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+}
+
+func parseDepartedSailing(value string) (scheduled, actual, vessel string, ok bool) {
+	matches := departedSailingPattern.FindStringSubmatch(normalizedText(value))
+	if len(matches) != 4 {
+		return "", "", "", false
+	}
+	return matches[1], matches[2], matches[3], true
+}
+
+func parseScheduledSailing(value string) (scheduled, vessel string, tomorrow, ok bool) {
+	matches := scheduledSailingPattern.FindStringSubmatch(normalizedText(value))
+	if len(matches) != 4 {
+		return "", "", false, false
+	}
+	return matches[1], matches[3], matches[2] != "", true
+}
+
+func pacificServiceDate(observedAt time.Time, tomorrow bool) string {
+	date := observedAt.In(vancouverLocation)
+	if tomorrow {
+		date = date.AddDate(0, 0, 1)
+	}
+	return date.Format("2006-01-02")
+}
+
+func stringPointer(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 /*
@@ -118,6 +172,52 @@ func ScrapeCapacityRoutes() {
  * @return void
  */
 func ScrapeCapacityRoute(document *goquery.Document, fromTerminalCode string, toTerminalCode string) {
+	route := parseCapacityRoute(document, fromTerminalCode, toTerminalCode, time.Now())
+
+	sailingsJson, err := json.Marshal(route.Sailings)
+	if err != nil {
+		log.Printf("ScrapeCapacityRoute: failed to marshal sailings for route %s: %v", route.RouteCode, err)
+		return
+	}
+
+	sqlStatement := `
+		INSERT INTO capacity_routes (
+			route_code,
+			from_terminal_code,
+			to_terminal_code,
+			sailing_duration,
+			sailings
+		)
+		VALUES
+			($1, $2, $3, $4, $5) ON CONFLICT (route_code) DO
+		UPDATE
+		SET
+			route_code = EXCLUDED.route_code,
+			from_terminal_code = EXCLUDED.from_terminal_code,
+			to_terminal_code = EXCLUDED.to_terminal_code,
+			sailing_duration = EXCLUDED.sailing_duration,
+			sailings = EXCLUDED.sailings
+		WHERE
+			capacity_routes.route_code = EXCLUDED.route_code`
+	_, err = db.Conn.Exec(
+		sqlStatement,
+		route.RouteCode,
+		route.FromTerminalCode,
+		route.ToTerminalCode,
+		route.SailingDuration,
+		sailingsJson,
+	)
+	if err != nil {
+		log.Printf("ScrapeCapacityRoute: failed to insert route %s: %v", route.RouteCode, err)
+	}
+}
+
+func parseCapacityRoute(
+	document *goquery.Document,
+	fromTerminalCode string,
+	toTerminalCode string,
+	observedAt time.Time,
+) models.CapacityRoute {
 	route := models.CapacityRoute{
 		RouteCode:        fromTerminalCode + toTerminalCode,
 		ToTerminalCode:   toTerminalCode,
@@ -129,23 +229,25 @@ func ScrapeCapacityRoute(document *goquery.Document, fromTerminalCode string, to
 		table.Find("tbody").Each(func(j int, tbody *goquery.Selection) {
 			tbody.Find("tr.mobile-friendly-row").Each(func(k int, row *goquery.Selection) {
 				// Init sailing
-				sailing := models.CapacitySailing{}
+				sailing := models.CapacitySailing{
+					ServiceDate: pacificServiceDate(observedAt, false),
+					ScrapedAt:   observedAt.UTC().Format(time.RFC3339),
+				}
+				rowTextLower := strings.ToLower(row.Text())
 
 				row.Find("td").Each(func(l int, td *goquery.Selection) {
-					rowTextLower := strings.ToLower(row.Text())
-
 					// Handle explicitly cancelled rows
 					if strings.Contains(rowTextLower, "cancelled") {
 						sailing.SailingStatus = "cancelled"
 
 						if l == 0 {
 							// Scheduled time and vessel
-							timeString := strings.Join(strings.Fields(strings.TrimSpace(td.Text())), " ")
-							re := regexp.MustCompile(`(?P<Time>\d{1,2}:\d{2} [ap]m)(?: \(Tomorrow\))? (?P<VesselName>.+)`)
-							matches := re.FindStringSubmatch(strings.Join(strings.Fields(timeString), " "))
-							if len(matches) >= 3 {
-								sailing.DepartureTime = matches[1]
-								sailing.VesselName = matches[2]
+							scheduled, vessel, tomorrow, ok := parseScheduledSailing(td.Text())
+							if ok {
+								sailing.DepartureTime = scheduled
+								sailing.ScheduledDepartureTime = scheduled
+								sailing.VesselName = vessel
+								sailing.ServiceDate = pacificServiceDate(observedAt, tomorrow)
 							}
 						} else if l == 1 {
 							// Capture reason if present under the red text block
@@ -159,31 +261,24 @@ func ScrapeCapacityRoute(document *goquery.Document, fromTerminalCode string, to
 								sailing.VesselStatus = reason
 							}
 						}
-					} else if strings.Contains(row.Text(), "Arrived") {
+					} else if strings.Contains(rowTextLower, "arrived") {
 						sailing.SailingStatus = "past"
 
 						if l == 0 {
-							timeString := strings.Join(strings.Fields(strings.TrimSpace(td.Find("p").Text())), " ")
+							scheduled, actual, vessel, ok := parseDepartedSailing(td.Find("p").Text())
 
-							re := regexp.MustCompile(`(?P<DepartureTime>\d{1,2}:\d{2} [ap]m) Departed (?P<ActualDepartureTime>\d{1,2}:\d{2} [ap]m) (?P<VesselName>.+)`)
-
-							// Find the matches
-							matches := re.FindStringSubmatch(strings.Join(strings.Fields(timeString), " "))
-
-							if len(matches) == 0 {
+							if !ok {
 								fmt.Println("No matches found, regex error")
 							} else {
-								// Extracting named groups
-								actualDepartureTime := matches[2]
-								vesselName := matches[3]
-
-								sailing.DepartureTime = actualDepartureTime
-								sailing.VesselName = vesselName
+								sailing.DepartureTime = actual
+								sailing.ScheduledDepartureTime = scheduled
+								sailing.ActualDepartureTime = stringPointer(actual)
+								sailing.VesselName = vessel
 							}
 						} else if l == 1 {
 							arrivalString := td.Find("div.cc-message-updates").Text()
 
-							re := regexp.MustCompile(`Arrived: (?P<ArrivalTime>\d{1,2}:\d{2} [ap]m)`)
+							re := regexp.MustCompile(`(?i)arrived\s*:\s*(?P<ArrivalTime>\d{1,2}:\d{2} [ap]m)`)
 
 							// Find the matches
 							matches := re.FindStringSubmatch(strings.Join(strings.Fields(arrivalString), " "))
@@ -195,33 +290,27 @@ func ScrapeCapacityRoute(document *goquery.Document, fromTerminalCode string, to
 								arrivalTime := matches[1]
 
 								sailing.ArrivalTime = arrivalTime
+								sailing.ActualArrivalTime = stringPointer(arrivalTime)
 							}
 						}
-					} else if strings.Contains(row.Text(), "ETA") || strings.Contains(row.Text(), "...") {
+					} else if strings.Contains(rowTextLower, "eta") || strings.Contains(rowTextLower, "...") {
 						sailing.SailingStatus = "current"
 
 						if l == 0 {
-							timeString := strings.Join(strings.Fields(strings.TrimSpace(td.Find("p").Text())), " ")
+							scheduled, actual, vessel, ok := parseDepartedSailing(td.Find("p").Text())
 
-							re := regexp.MustCompile(`(?P<DepartureTime>\d{1,2}:\d{2} [ap]m) Departed (?P<ActualDepartureTime>\d{1,2}:\d{2} [ap]m) (?P<VesselName>.+)`)
-
-							// Find the matches
-							matches := re.FindStringSubmatch(strings.Join(strings.Fields(timeString), " "))
-
-							if len(matches) == 0 {
+							if !ok {
 								fmt.Println("No matches found, regex error")
 							} else {
-								// Extracting named groups
-								actualDepartureTime := matches[2]
-								vesselName := matches[3]
-
-								sailing.DepartureTime = actualDepartureTime
-								sailing.VesselName = vesselName
+								sailing.DepartureTime = actual
+								sailing.ScheduledDepartureTime = scheduled
+								sailing.ActualDepartureTime = stringPointer(actual)
+								sailing.VesselName = vessel
 							}
 						} else if l == 1 {
 							etaString := td.Find("div.cc-message-updates").Text()
 
-							re := regexp.MustCompile(`ETA : (?P<ETA>\d{1,2}:\d{2} [ap]m|Variable)`)
+							re := regexp.MustCompile(`(?i)eta\s*:\s*(?P<ETA>\d{1,2}:\d{2} [ap]m|Variable)`)
 
 							// Find the matches
 							matches := re.FindStringSubmatch(strings.Join(strings.Fields(etaString), " "))
@@ -233,29 +322,23 @@ func ScrapeCapacityRoute(document *goquery.Document, fromTerminalCode string, to
 								etaTime := matches[1]
 
 								sailing.ArrivalTime = etaTime
+								sailing.EstimatedArrivalTime = stringPointer(etaTime)
 							}
 						}
-					} else if strings.Contains(row.Text(), "Details") || strings.Contains(row.Text(), "%") || strings.Contains(strings.ToLower(row.Text()), "full") {
+					} else if strings.Contains(rowTextLower, "details") || strings.Contains(rowTextLower, "%") || strings.Contains(rowTextLower, "full") {
 						sailing.SailingStatus = "future"
 
 						if l == 0 {
 							// schedule time, vessel
-							timeString := strings.Join(strings.Fields(strings.TrimSpace(td.Text())), " ")
+							scheduled, vessel, tomorrow, ok := parseScheduledSailing(td.Text())
 
-							re := regexp.MustCompile(`(?P<Time>\d{1,2}:\d{2} [ap]m)(?: \(Tomorrow\))? (?P<VesselName>.+)`)
-
-							// Find the matches
-							matches := re.FindStringSubmatch(strings.Join(strings.Fields(timeString), " "))
-
-							if len(matches) == 0 {
+							if !ok {
 								fmt.Println("No matches found, regex error")
 							} else {
-								// Extracting named groups
-								time := matches[1]
-								vesselName := matches[2]
-
-								sailing.DepartureTime = time
-								sailing.VesselName = vesselName
+								sailing.DepartureTime = scheduled
+								sailing.ScheduledDepartureTime = scheduled
+								sailing.VesselName = vessel
+								sailing.ServiceDate = pacificServiceDate(observedAt, tomorrow)
 							}
 						} else if l == 1 {
 							// details link
@@ -378,37 +461,8 @@ func ScrapeCapacityRoute(document *goquery.Document, fromTerminalCode string, to
 	sailingDuration = strings.ReplaceAll(sailingDuration, "Sailing duration:", "")
 	sailingDuration = strings.ReplaceAll(sailingDuration, "sailing duration:", "")
 	sailingDuration = strings.TrimSpace(sailingDuration)
-
-	sailingsJson, err := json.Marshal(route.Sailings)
-	if err != nil {
-		log.Printf("ScrapeCapacityRoute: failed to marshal sailings for route %s: %v", route.RouteCode, err)
-		return
-	}
-
-	sqlStatement := `
-		INSERT INTO capacity_routes (
-			route_code,
-			from_terminal_code,
-			to_terminal_code,
-			sailing_duration,
-			sailings
-		)
-		VALUES
-			($1, $2, $3, $4, $5) ON CONFLICT (route_code) DO
-		UPDATE
-		SET
-			route_code = EXCLUDED.route_code,
-			from_terminal_code = EXCLUDED.from_terminal_code,
-			to_terminal_code = EXCLUDED.to_terminal_code,
-			sailing_duration = EXCLUDED.sailing_duration,
-			sailings = EXCLUDED.sailings
-		WHERE
-			capacity_routes.route_code = EXCLUDED.route_code`
-	_, err = db.Conn.Exec(sqlStatement, route.RouteCode, route.FromTerminalCode, route.ToTerminalCode, sailingDuration, sailingsJson)
-	if err != nil {
-		log.Printf("ScrapeCapacityRoute: failed to insert route %s: %v", route.RouteCode, err)
-		return
-	}
+	route.SailingDuration = sailingDuration
+	return route
 }
 
 /*

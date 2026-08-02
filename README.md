@@ -65,6 +65,21 @@ Version 2 of the API includes data for all terminals and routes served by BC Fer
 
 The root `/v2/` route provides data for both capacity and non-capacity sailings. Non-capacity includes information on all BC Ferries routes, while capacity data covers routes with vessel fill data reported by BC Ferries.
 
+#### Capacity sailing times
+
+Capacity sailings expose explicit time fields so consumers do not have to infer whether a value is scheduled, estimated, or actual:
+
+| Field | Meaning |
+| --- | --- |
+| `serviceDate` | Sailing date in the `America/Vancouver` timezone. |
+| `scheduledDepartureTime` | Published departure time. This remains unchanged when a sailing is delayed. |
+| `actualDepartureTime` | Observed departure time, or `null` until the vessel departs. |
+| `estimatedArrivalTime` | Current ETA, or `null` when no ETA is published. |
+| `actualArrivalTime` | Observed arrival time, or `null` until the vessel arrives. |
+| `scrapedAt` | UTC timestamp for when the current-conditions page was observed. |
+
+The legacy `time` and `arrivalTime` fields remain for compatibility. Their meaning varies with `sailingStatus`, so new consumers should use the explicit fields above.
+
 #### Capacity Route Codes:
 
 - **"TSA"**: Routes to terminals "SWB", "SGI", "DUK"

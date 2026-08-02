@@ -42,13 +42,62 @@
                       },
                       {
                         "type": "string",
-                        "enum": ["","Variable"]
+                        "enum": ["", "...", "Variable"]
                       }
                     ]
                   },
+                  "scheduledDepartureTime": {
+                    "type": "string",
+                    "pattern": "^(1[0-2]|0?[1-9]):[0-5][0-9] (am|pm)$"
+                  },
+                  "actualDepartureTime": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^(1[0-2]|0?[1-9]):[0-5][0-9] (am|pm)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "estimatedArrivalTime": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^(1[0-2]|0?[1-9]):[0-5][0-9] (am|pm)$"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Variable"]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "actualArrivalTime": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^(1[0-2]|0?[1-9]):[0-5][0-9] (am|pm)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "serviceDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "scrapedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
                   "sailingStatus": {
                     "type": "string",
-                    "enum": ["future", "past", "current"]
+                    "enum": ["future", "past", "current", "cancelled"]
                   },
                   "fill": {
                     "type": "number",
@@ -75,6 +124,12 @@
                 "required": [
                   "time",
                   "arrivalTime",
+                  "scheduledDepartureTime",
+                  "actualDepartureTime",
+                  "estimatedArrivalTime",
+                  "actualArrivalTime",
+                  "serviceDate",
+                  "scrapedAt",
                   "sailingStatus",
                   "fill",
                   "carFill",
@@ -155,4 +210,3 @@
     },
     "required": ["capacityRoutes", "nonCapacityRoutes"]
   }
-  
