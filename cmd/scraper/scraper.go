@@ -431,11 +431,12 @@ func ScrapeNonCapacityRoutes() {
 			destination := destinationTerminals[i][j]
 
 			dailyLink := MakeScheduleLink(departure, destination)
-			html, err := fetchWithChromedp(ctx, dailyLink)
+			html, finalURL, err := fetchWithChromedp(ctx, dailyLink)
 			if err == nil {
 				document, parseErr := goquery.NewDocumentFromReader(strings.NewReader(html))
 				if parseErr == nil {
-					if ScrapeNonCapacityRoute(document, departure, destination, true) {
+					isDaily := isDailySchedulePage(document, finalURL)
+					if ScrapeNonCapacityRoute(document, departure, destination, isDaily) {
 						continue
 					}
 				} else {
@@ -446,7 +447,7 @@ func ScrapeNonCapacityRoutes() {
 			}
 
 			seasonalLink := MakeSeasonalScheduleLink(departure, destination)
-			html, err = fetchWithChromedp(ctx, seasonalLink)
+			html, _, err = fetchWithChromedp(ctx, seasonalLink)
 			if err != nil {
 				log.Printf("ScrapeNonCapacityRoutes: seasonal fetch failed for %s: %v", seasonalLink, err)
 				continue
@@ -709,8 +710,8 @@ func ScrapeNonCapacityRoute(document *goquery.Document, fromTerminalCode, toTerm
 					return
 				}
 			}
-			// If there is an "except on" note, exclude if today is listed
-			if strings.Contains(combinedRed, "except on") {
+			// BC Ferries uses both phrases for date-specific exclusions.
+			if strings.Contains(combinedRed, "except on") || strings.Contains(combinedRed, "not available on") {
 				dates := parseMentionedDates(combinedRed, today.Year())
 				if _, ok := dates[todayKey]; ok {
 					return
@@ -740,6 +741,28 @@ func ScrapeNonCapacityRoute(document *goquery.Document, fromTerminalCode, toTerm
 
 	if len(route.Sailings) == 0 {
 		log.Printf("ScrapeNonCapacityRoute: no sailings parsed for %s", route.RouteCode)
+		return false
+	}
+
+	// Defensive final check: malformed or repeated markup must not leak duplicate
+	// sailings into the API response.
+	uniqueSailings := make([]models.NonCapacitySailing, 0, len(route.Sailings))
+	seenSailings := make(map[string]struct{}, len(route.Sailings))
+	for _, sailing := range route.Sailings {
+		if sailing.DepartureTime == "" || sailing.ArrivalTime == "" {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(sailing.DepartureTime)) + "|" +
+			strings.ToLower(strings.TrimSpace(sailing.ArrivalTime))
+		if _, seen := seenSailings[key]; seen {
+			continue
+		}
+		seenSailings[key] = struct{}{}
+		uniqueSailings = append(uniqueSailings, sailing)
+	}
+	route.Sailings = uniqueSailings
+	if len(route.Sailings) == 0 {
+		log.Printf("ScrapeNonCapacityRoute: no valid sailings parsed for %s", route.RouteCode)
 		return false
 	}
 
@@ -790,33 +813,24 @@ func parseDailyScheduleSailings(document *goquery.Document) ([]models.NonCapacit
 	var sailings []models.NonCapacitySailing
 	sailingDuration := ""
 
-	document.Find("table").Each(func(_ int, table *goquery.Selection) {
-		if len(sailings) > 0 {
-			return
-		}
+	table := document.Find("#dailyScheduleTableOnward").First()
+	if table.Length() == 0 {
+		return sailings, sailingDuration, false
+	}
 
-		headerText := strings.ToUpper(clean(table.Find("thead").First().Text()))
-		if headerText == "" {
-			headerText = strings.ToUpper(clean(table.Find("tr").First().Text()))
-		}
-		if !strings.Contains(headerText, "DEPART") || !strings.Contains(headerText, "ARRIVE") {
-			return
-		}
+	func() {
 
 		tableSailings := make([]models.NonCapacitySailing, 0)
 		tableDuration := ""
 
-		rows := table.Find("tbody tr")
-		if rows.Length() == 0 {
-			rows = table.Find("tr")
-		}
+		rows := table.Find("tbody").First().ChildrenFiltered("tr.schedule-table-row")
 
 		rows.Each(func(_ int, row *goquery.Selection) {
 			if row.Find("th").Length() > 0 {
 				return
 			}
 
-			tds := row.Find("td")
+			tds := row.ChildrenFiltered("td")
 			if tds.Length() < 2 {
 				return
 			}
@@ -832,7 +846,7 @@ func parseDailyScheduleSailings(document *goquery.Document) ([]models.NonCapacit
 					timeTokens = append(timeTokens, m)
 				}
 			})
-			if len(timeTokens) == 0 {
+			if len(timeTokens) < 2 {
 				return
 			}
 			departureTime := timeTokens[0]
@@ -866,13 +880,9 @@ func parseDailyScheduleSailings(document *goquery.Document) ([]models.NonCapacit
 			})
 		})
 
-		if len(tableSailings) == 0 {
-			return
-		}
-
 		sailings = tableSailings
 		sailingDuration = tableDuration
-	})
+	}()
 
 	return sailings, sailingDuration, len(sailings) > 0
 }
@@ -893,13 +903,32 @@ func parseDailyScheduleSailings(document *goquery.Document) ([]models.NonCapacit
  * @return string - The full outer HTML of the rendered page
  * @return error - Any error encountered during navigation or retrieval
  */
-func fetchWithChromedp(ctx context.Context, url string) (string, error) {
+func fetchWithChromedp(ctx context.Context, url string) (string, string, error) {
 	var html string
+	var finalURL string
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.WaitReady("body", chromedp.ByQuery),
+		chromedp.Location(&finalURL),
 		chromedp.OuterHTML("html", &html),
 	)
 
-	return html, err
+	return html, finalURL, err
+}
+
+// isDailySchedulePage detects redirects from a daily URL to a seasonal page.
+// The final browser URL is authoritative; canonical is a fallback for fixtures
+// and pages whose client-side navigation leaves an ambiguous location.
+func isDailySchedulePage(document *goquery.Document, finalURL string) bool {
+	finalURL = strings.ToLower(finalURL)
+	if strings.Contains(finalURL, "/schedules/seasonal/") {
+		return false
+	}
+	if strings.Contains(finalURL, "/schedules/daily/") {
+		return true
+	}
+
+	canonical, _ := document.Find(`link[rel="canonical"]`).First().Attr("href")
+	canonical = strings.ToLower(canonical)
+	return strings.Contains(canonical, "/schedules/daily/")
 }
