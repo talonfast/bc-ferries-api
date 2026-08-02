@@ -47,9 +47,27 @@ This will:
 
 Visit these routes to test if setup was successful:
 
-http://localhost:8080/healthcheck/ (API health check)
+http://localhost:8081/healthcheck/ (API health check)
 
-http://localhost:8080/v2/ (Main endpoint)
+http://localhost:8081/v2/ (Main endpoint)
+
+### Self-hosted deployment
+
+The production-oriented Compose file keeps PostgreSQL private, persists its
+data in a named volume, exposes the API only on the host loopback interface,
+and joins an existing shared Docker network for access by a reverse proxy or
+another application container.
+
+```sh
+cp .env.selfhost.example .env
+# Replace DB_PASS with a long random hexadecimal value.
+docker compose -f docker-compose.selfhost.yml up -d --build
+curl --fail http://127.0.0.1:8081/healthcheck/
+```
+
+Override `SHARED_NETWORK` if the consuming stack uses a network other than
+`stack_stack`. The API is available to containers on that network as
+`http://bc-ferries-api:8081`.
 
 ## API Reference
 

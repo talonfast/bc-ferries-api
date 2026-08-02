@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -73,11 +74,20 @@ func GetCapacitySailings(w http.ResponseWriter, r *http.Request, ps httprouter.P
 		Routes: routes,
 	}
 
-	if len(response.Routes[0].Sailings) == 0 {
+	hasSailings := false
+	for _, route := range response.Routes {
+		if len(route.Sailings) > 0 {
+			hasSailings = true
+			break
+		}
+	}
+
+	if !hasSailings {
 		jsonString, _ := json.Marshal("BC Ferries Data Currently Down")
 
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Write(jsonString)
 	} else {
 		jsonString, _ := json.Marshal(response)
@@ -228,10 +238,26 @@ func GetSailingsByDepartureAndDestinationTerminals(w http.ResponseWriter, r *htt
  * @return void
  */
 func HealthCheck(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	jsonString, _ := json.Marshal("Server OK")
-
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
+
+	if db.Conn == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		jsonString, _ := json.Marshal("Database unavailable")
+		w.Write(jsonString)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := db.Conn.PingContext(ctx); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		jsonString, _ := json.Marshal("Database unavailable")
+		w.Write(jsonString)
+		return
+	}
+
+	jsonString, _ := json.Marshal("Server OK")
 	w.Write(jsonString)
 }
 
@@ -280,20 +306,20 @@ func ConvertV1ResponseToV2Response(allData AllDataResponse) map[string]map[strin
 					Sailings:        []models.Sailing{},
 				}
 
-                for _, capSailing := range capRoute.Sailings {
-                    if capSailing.SailingStatus == "future" || capSailing.SailingStatus == "cancelled" {
-                        route.Sailings = append(route.Sailings, models.Sailing{
-                            DepartureTime: capSailing.DepartureTime,
-                            ArrivalTime:   capSailing.ArrivalTime,
-                            IsCancelled:   capSailing.SailingStatus == "cancelled",
-                            Fill:          capSailing.Fill,
-                            CarFill:       capSailing.CarFill,
-                            OversizeFill:  capSailing.OversizeFill,
-                            VesselName:    capSailing.VesselName,
-                            VesselStatus:  capSailing.VesselStatus,
-                        })
-                    }
-                }
+				for _, capSailing := range capRoute.Sailings {
+					if capSailing.SailingStatus == "future" || capSailing.SailingStatus == "cancelled" {
+						route.Sailings = append(route.Sailings, models.Sailing{
+							DepartureTime: capSailing.DepartureTime,
+							ArrivalTime:   capSailing.ArrivalTime,
+							IsCancelled:   capSailing.SailingStatus == "cancelled",
+							Fill:          capSailing.Fill,
+							CarFill:       capSailing.CarFill,
+							OversizeFill:  capSailing.OversizeFill,
+							VesselName:    capSailing.VesselName,
+							VesselStatus:  capSailing.VesselStatus,
+						})
+					}
+				}
 
 				if len(route.Sailings) > 0 {
 					if _, ok := schedule[fromTerminal]; !ok {

@@ -1,0 +1,59 @@
+name: bc-ferries-api
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: bc-ferries-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS is required}
+      POSTGRES_DB: ${DB_NAME:?DB_NAME is required}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  api:
+    container_name: bc-ferries-api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_USER: ${DB_USER:?DB_USER is required}
+      DB_PASS: ${DB_PASS:?DB_PASS is required}
+      DB_NAME: ${DB_NAME:?DB_NAME is required}
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_SSL: disable
+      PORT: "8081"
+      TZ: America/Vancouver
+    ports:
+      - "127.0.0.1:8081:8081"
+    shm_size: 1gb
+    networks:
+      internal:
+      shared:
+        aliases:
+          - bc-ferries-api
+
+volumes:
+  db_data:
+
+networks:
+  internal:
+    internal: true
+  shared:
+    external: true
+    name: ${SHARED_NETWORK:-stack_stack}

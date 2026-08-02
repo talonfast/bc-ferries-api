@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -30,13 +31,14 @@ var (
  *
  * Populates the DB configuration and server port. Constructs the database URL
  * using the retrieved values. Logs a fatal error and exits if any required DB
- * variables are missing or if the `.env` file cannot be loaded.
+ * variables are missing. A local `.env` file is optional because production
+ * deployments normally inject the same values through the process environment.
  *
  * @return void
  */
 func LoadEnv() {
-	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Fatalf("Error loading .env file: %v", err)
 	}
 
 	// DB config

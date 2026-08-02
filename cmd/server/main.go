@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	_ "github.com/lib/pq"
@@ -25,5 +26,8 @@ func main() {
 	}
 
 	router := router.SetupRouter()
-	http.ListenAndServe(":"+config.ServerPort, router)
+	log.Printf("INFO: API listening on port %s", config.ServerPort)
+	if err := http.ListenAndServe(":"+config.ServerPort, router); err != nil {
+		log.Fatal(err)
+	}
 }
