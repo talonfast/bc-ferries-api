@@ -73,6 +73,8 @@ var scheduledSailingPattern = regexp.MustCompile(
 	`(?i)^(?P<Scheduled>\d{1,2}:\d{2} [ap]m)(?P<Tomorrow> \(Tomorrow\))? (?P<Vessel>.+)$`,
 )
 
+var etaStatusPattern = regexp.MustCompile(`(?i)\beta\s*:`)
+
 var vancouverLocation = mustLoadLocation("America/Vancouver")
 
 func mustLoadLocation(name string) *time.Location {
@@ -235,6 +237,8 @@ func parseCapacityRoute(
 					ScrapedAt:   observedAt.UTC().Format(time.RFC3339),
 				}
 				rowTextLower := strings.ToLower(row.Text())
+				updatesText := normalizedText(row.Find("div.cc-message-updates").Text())
+				hasETA := etaStatusPattern.MatchString(updatesText) || strings.Contains(updatesText, "...")
 
 				row.Find("td").Each(func(l int, td *goquery.Selection) {
 					// Handle explicitly cancelled rows
@@ -294,7 +298,7 @@ func parseCapacityRoute(
 								sailing.ActualArrivalTime = stringPointer(arrivalTime)
 							}
 						}
-					} else if strings.Contains(rowTextLower, "eta") || strings.Contains(rowTextLower, "...") {
+					} else if hasETA {
 						sailing.SailingStatus = "current"
 
 						if l == 0 {
@@ -326,7 +330,7 @@ func parseCapacityRoute(
 								sailing.EstimatedArrivalTime = stringPointer(etaTime)
 							}
 						}
-					} else if strings.Contains(rowTextLower, "details") || strings.Contains(rowTextLower, "%") || strings.Contains(rowTextLower, "full") {
+					} else {
 						sailing.SailingStatus = "future"
 
 						if l == 0 {
@@ -442,7 +446,16 @@ func parseCapacityRoute(
 					}
 				})
 
-				// Add salining to route
+				if sailing.ScheduledDepartureTime == "" || sailing.VesselName == "" {
+					log.Printf(
+						"parseCapacityRoute: skipping unparseable sailing row for route %s: %q",
+						route.RouteCode,
+						normalizedText(row.Text()),
+					)
+					return
+				}
+
+				// Add sailing to route
 				route.Sailings = append(route.Sailings, sailing)
 			})
 		})

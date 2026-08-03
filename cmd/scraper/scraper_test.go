@@ -126,6 +126,66 @@ func TestCapacitySailingJSON_UsesNullForUnavailableOperationalTimes(t *testing.T
 	}
 }
 
+func TestParseCapacityRoute_DetailsDoesNotMatchETA(t *testing.T) {
+	fixture := `
+	<table class="detail-departure-table"><tbody>
+	<tr class="mobile-friendly-row">
+	<td><p><span>7:00 am</span>
+		<a><br>Spirit of British Columbia</a></p></td>
+	<td>
+		<p>7:00 am <a>Spirit of British Columbia</a></p>
+		<div class="cc-message-updates">
+			<p>Estimated vehicle space available</p>
+			<span class="cc-vessel-percent-full">12%</span>
+			<a class="vehicle-info-link"><span>Details</span></a>
+		</div>
+	</td>
+	</tr>
+	</tbody></table>`
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	route := parseCapacityRoute(
+		document,
+		"TSA",
+		"SWB",
+		time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC),
+	)
+	if len(route.Sailings) != 1 {
+		t.Fatalf("expected one sailing, got %d", len(route.Sailings))
+	}
+	sailing := route.Sailings[0]
+	if sailing.SailingStatus != "future" {
+		t.Fatalf("Details must not be mistaken for ETA; got status %q", sailing.SailingStatus)
+	}
+	if sailing.ScheduledDepartureTime != "7:00 am" || sailing.VesselName != "Spirit of British Columbia" {
+		t.Fatalf("unexpected future sailing: %#v", sailing)
+	}
+}
+
+func TestParseCapacityRoute_SkipsUnparseablePlaceholderRows(t *testing.T) {
+	fixture := `
+	<table class="detail-departure-table"><tbody>
+	<tr class="mobile-friendly-row"><td>Loading...</td><td>...</td></tr>
+	</tbody></table>`
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	route := parseCapacityRoute(
+		document,
+		"TSA",
+		"SWB",
+		time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC),
+	)
+	if len(route.Sailings) != 0 {
+		t.Fatalf("expected placeholder row to be skipped, got %#v", route.Sailings)
+	}
+}
+
 func TestPacificServiceDate_UsesVancouverCalendarDate(t *testing.T) {
 	// This is 11:30 pm PDT on August 1. Using UTC, or a fixed standard-time
 	// offset, would incorrectly assign it to August 2.
