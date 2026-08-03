@@ -571,9 +571,14 @@ func ScrapeOfficialCapacitySchedules() {
 		for i, departure := range departures {
 			for _, destination := range destinations[i] {
 				sourceURL := MakeScheduleLinkForDate(departure, destination, requestedDate)
-				requestCtx, requestCancel := context.WithTimeout(ctx, 45*time.Second)
+				// Isolate each navigation in a child tab. Cancelling a timeout on
+				// the shared browser context terminates every later route in the
+				// generation.
+				pageCtx, pageCancel := chromedp.NewContext(ctx)
+				requestCtx, requestCancel := context.WithTimeout(pageCtx, 45*time.Second)
 				html, finalURL, err := fetchWithChromedp(requestCtx, sourceURL)
 				requestCancel()
+				pageCancel()
 				if err != nil {
 					log.Printf("ScrapeOfficialCapacitySchedules: fetch failed for %s: %v", sourceURL, err)
 					continue
