@@ -38,6 +38,27 @@ in the published baseline is retained with
 with no matching operational record is retained with
 `operationalSource=unavailable`.
 
+## Southern Gulf Islands itineraries
+
+`SGI` remains a route group, not a physical terminal. When the current-
+conditions page publishes an itinerary such as `via Saturna Island (Lyall
+Harbour), Mayne Island (Village Bay) to Pender Island (Otter Bay)`, the API
+retains that text in `itineraryRaw` and exposes an ordered `portCalls` array.
+Sequence zero is the physical origin; later calls use stable BC Ferries terminal
+codes and distinguish intermediate `stop` calls from an explicitly published
+`destination`.
+
+Port call identity is derived from the canonical sailing rather than from live
+vessel data:
+
+```text
+<sailingId>:call:<zero-padded sequence>:<terminal code>
+```
+
+If an itinerary contains an unknown terminal name, the raw operator text is
+kept but no partial call sequence is emitted. AIS may later advance live state
+through these calls, but it must not invent, remove, or reorder them.
+
 ## Failure behaviour
 
 - Official schedules are stored separately by route and Vancouver service date.

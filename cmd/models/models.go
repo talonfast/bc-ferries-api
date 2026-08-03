@@ -26,6 +26,14 @@ type CapacitySailing struct {
 	ScheduleSourceURL    string `json:"scheduleSourceUrl"`
 	ScheduleScrapedAt    string `json:"scheduleScrapedAt"`
 	OperationalSource    string `json:"operationalSource"`
+	// ItineraryRaw preserves the operator's exact normalized "via ... to ..."
+	// description. PortCalls is the parsed, ordered representation; clients must
+	// fall back to ItineraryRaw rather than guessing if a new terminal cannot be
+	// recognized.
+	ItineraryRaw        string     `json:"itineraryRaw,omitempty"`
+	ItinerarySource     string     `json:"itinerarySource,omitempty"`
+	ItineraryObservedAt string     `json:"itineraryObservedAt,omitempty"`
+	PortCalls           []PortCall `json:"portCalls,omitempty"`
 
 	// Deprecated compatibility fields. Their meaning changes with status:
 	// future uses the scheduled departure, current/past use the actual
@@ -50,6 +58,21 @@ type CapacitySailing struct {
 	OversizeFill  int    `json:"oversizeFill"`
 	VesselName    string `json:"vesselName"`
 	VesselStatus  string `json:"vesselStatus"`
+}
+
+// PortCall is one published call in a physical sailing. Sequence zero is the
+// origin; subsequent calls retain the order BC Ferries publishes. Arrival and
+// departure instants are optional until the individual-terminal timetable has
+// enriched that call.
+type PortCall struct {
+	PortCallID           string `json:"portCallId"`
+	Sequence             int    `json:"sequence"`
+	TerminalCode         string `json:"terminalCode"`
+	TerminalName         string `json:"terminalName"`
+	IslandName           string `json:"islandName,omitempty"`
+	Role                 string `json:"role"`
+	ScheduledArrivalAt   string `json:"scheduledArrivalAt,omitempty"`
+	ScheduledDepartureAt string `json:"scheduledDepartureAt,omitempty"`
 }
 
 // OfficialScheduleRoute is the independently persisted timetable baseline

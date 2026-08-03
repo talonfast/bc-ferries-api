@@ -101,6 +101,9 @@ Capacity sailings expose explicit time fields so consumers do not have to infer 
 | `scheduleSource` | Operator source used for the immutable schedule baseline. |
 | `scheduleSourceUrl` / `scheduleScrapedAt` | Exact baseline page and the time that generation was observed. |
 | `operationalSource` | Operator source used for status, actual times, vessel, and capacity observations. |
+| `itineraryRaw` | Normalized operator text describing Southern Gulf Islands calls, retained for audit and fallback. |
+| `itinerarySource` / `itineraryObservedAt` | Source and observation time for the published stopping pattern. |
+| `portCalls` | Ordered physical terminal calls. Each call has a deterministic ID, terminal code, sequence, and role; call times are included when known. |
 
 The legacy `time` and `arrivalTime` fields remain for compatibility. Their meaning varies with `sailingStatus`, so new consumers should use the explicit fields above.
 

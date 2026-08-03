@@ -82,6 +82,37 @@ var scheduledSailingPattern = regexp.MustCompile(
 
 var etaStatusPattern = regexp.MustCompile(`(?i)\beta\s*:`)
 
+var sgiTerminalPattern = regexp.MustCompile(
+	`(?i)(^to\s+|^via\s+|,\s*|\s+to\s+)` +
+		`([[:alpha:]][[:alpha:]' -]*Island\s*\([[:alpha:]][[:alpha:]' -]+\))`,
+)
+
+type terminalDescription struct {
+	Code         string
+	TerminalName string
+	IslandName   string
+}
+
+var terminalDescriptions = map[string]terminalDescription{
+	"TSA": {Code: "TSA", TerminalName: "Tsawwassen"},
+	"SWB": {Code: "SWB", TerminalName: "Swartz Bay"},
+	"galiano island (sturdies bay)": {
+		Code: "PSB", TerminalName: "Sturdies Bay", IslandName: "Galiano Island",
+	},
+	"mayne island (village bay)": {
+		Code: "PVB", TerminalName: "Village Bay", IslandName: "Mayne Island",
+	},
+	"pender island (otter bay)": {
+		Code: "POB", TerminalName: "Otter Bay", IslandName: "Pender Island",
+	},
+	"saturna island (lyall harbour)": {
+		Code: "PST", TerminalName: "Lyall Harbour", IslandName: "Saturna Island",
+	},
+	"salt spring island (long harbour)": {
+		Code: "PLH", TerminalName: "Long Harbour", IslandName: "Salt Spring Island",
+	},
+}
+
 var vancouverLocation = mustLoadLocation("America/Vancouver")
 
 func mustLoadLocation(name string) *time.Location {
@@ -165,6 +196,68 @@ func canonicalSailingIdentity(
 		),
 		scheduledAt.Format(time.RFC3339),
 		true
+}
+
+func parseSGIPortCalls(
+	raw string,
+	fromTerminalCode string,
+	sailingID string,
+	scheduledDepartureAt string,
+) []models.PortCall {
+	raw = normalizedText(raw)
+	if raw == "" || sailingID == "" {
+		return nil
+	}
+
+	origin, ok := terminalDescriptions[strings.ToUpper(strings.TrimSpace(fromTerminalCode))]
+	if !ok {
+		return nil
+	}
+	matches := sgiTerminalPattern.FindAllStringSubmatchIndex(raw, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	calls := []models.PortCall{{
+		PortCallID:           fmt.Sprintf("%s:call:%02d:%s", sailingID, 0, origin.Code),
+		Sequence:             0,
+		TerminalCode:         origin.Code,
+		TerminalName:         origin.TerminalName,
+		IslandName:           origin.IslandName,
+		Role:                 "origin",
+		ScheduledDepartureAt: scheduledDepartureAt,
+	}}
+
+	lowerRaw := strings.ToLower(raw)
+	destinationBoundary := strings.LastIndex(lowerRaw, " to ")
+	if strings.HasPrefix(lowerRaw, "to ") {
+		destinationBoundary = 0
+	}
+
+	for _, bounds := range matches {
+		terminalStart, terminalEnd := bounds[4], bounds[5]
+		terminalKey := strings.ToLower(normalizedText(raw[terminalStart:terminalEnd]))
+		description, known := terminalDescriptions[terminalKey]
+		if !known {
+			// Keep the raw itinerary on the sailing, but do not manufacture a
+			// partial ordered route when the operator introduces a new name.
+			return nil
+		}
+		sequence := len(calls)
+		role := "stop"
+		if destinationBoundary >= 0 && terminalStart > destinationBoundary {
+			role = "destination"
+		}
+		calls = append(calls, models.PortCall{
+			PortCallID:   fmt.Sprintf("%s:call:%02d:%s", sailingID, sequence, description.Code),
+			Sequence:     sequence,
+			TerminalCode: description.Code,
+			TerminalName: description.TerminalName,
+			IslandName:   description.IslandName,
+			Role:         role,
+		})
+	}
+	return calls
 }
 
 /*
@@ -284,6 +377,7 @@ func parseCapacityRoute(
 					ServiceDate: pacificServiceDate(observedAt, false),
 					ScrapedAt:   observedAt.UTC().Format(time.RFC3339),
 				}
+				itineraryRaw := normalizedText(row.PrevAllFiltered("tr.sgi-row").First().Text())
 				rowTextLower := strings.ToLower(row.Text())
 				updatesText := normalizedText(row.Find("div.cc-message-updates").Text())
 				hasETA := etaStatusPattern.MatchString(updatesText) || strings.Contains(updatesText, "...")
@@ -529,6 +623,17 @@ func parseCapacityRoute(
 				)
 				sailing.ScheduleScrapedAt = sailing.ScrapedAt
 				sailing.OperationalSource = "bc-ferries-current-conditions"
+				if itineraryRaw != "" {
+					sailing.ItineraryRaw = itineraryRaw
+					sailing.ItinerarySource = "bc-ferries-current-conditions"
+					sailing.ItineraryObservedAt = sailing.ScrapedAt
+					sailing.PortCalls = parseSGIPortCalls(
+						itineraryRaw,
+						route.FromTerminalCode,
+						sailing.SailingID,
+						sailing.ScheduledDepartureAt,
+					)
+				}
 
 				// Add sailing to route
 				route.Sailings = append(route.Sailings, sailing)

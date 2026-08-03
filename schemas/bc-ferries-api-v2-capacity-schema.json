@@ -52,6 +52,49 @@
                   "operationalSource": {
                     "type": "string"
                   },
+                  "itineraryRaw": {
+                    "type": "string"
+                  },
+                  "itinerarySource": {
+                    "type": "string"
+                  },
+                  "itineraryObservedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "portCalls": {
+                    "type": "array",
+                    "minItems": 2,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "portCallId": { "type": "string" },
+                        "sequence": { "type": "integer", "minimum": 0 },
+                        "terminalCode": { "type": "string" },
+                        "terminalName": { "type": "string" },
+                        "islandName": { "type": "string" },
+                        "role": {
+                          "type": "string",
+                          "enum": ["origin", "stop", "destination"]
+                        },
+                        "scheduledArrivalAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "scheduledDepartureAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "portCallId",
+                        "sequence",
+                        "terminalCode",
+                        "terminalName",
+                        "role"
+                      ]
+                    }
+                  },
                   "time": {
                     "oneOf": [
                       {

@@ -3,6 +3,7 @@ package scraper
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,6 +120,89 @@ func TestParseCapacityRoute_DuplicateScheduledDeparturesHaveStableOccurrences(t 
 	}
 	if route.Sailings[1].SailingID != "bcf:v1:2026-08-03:TSA-SWB:0700:02" {
 		t.Fatalf("unexpected second ID %q", route.Sailings[1].SailingID)
+	}
+}
+
+func TestParseCapacityRoute_ModelsOrderedSouthernGulfIslandCalls(t *testing.T) {
+	fixture := `
+	<table class="detail-departure-table"><tbody>
+	<tr class="sgi-row"><td id="stop-names">
+		via Saturna Island (Lyall Harbour), Mayne Island (Village Bay)
+		to Pender Island (Otter Bay)
+	</td></tr>
+	<tr class="mobile-friendly-row">
+		<td><p>5:05 am Salish Raven</p></td><td><span>20%</span></td>
+	</tr>
+	<tr class="sgi-row"><td id="stop-names">to Galiano Island (Sturdies Bay)</td></tr>
+	<tr class="mobile-friendly-row">
+		<td><p>8:20 am Salish Raven</p></td><td><span>30%</span></td>
+	</tr>
+	</tbody></table>`
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	observedAt := time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC)
+	route := parseCapacityRoute(document, "SWB", "SGI", observedAt)
+	if len(route.Sailings) != 2 {
+		t.Fatalf("expected two sailings, got %d", len(route.Sailings))
+	}
+
+	multiStop := route.Sailings[0]
+	if multiStop.ItineraryRaw != "via Saturna Island (Lyall Harbour), Mayne Island (Village Bay) to Pender Island (Otter Bay)" {
+		t.Fatalf("unexpected normalized itinerary %q", multiStop.ItineraryRaw)
+	}
+	if multiStop.ItinerarySource != "bc-ferries-current-conditions" ||
+		multiStop.ItineraryObservedAt != "2026-08-03T12:00:00Z" {
+		t.Fatalf("missing itinerary provenance: %#v", multiStop)
+	}
+	wantCodes := []string{"SWB", "PST", "PVB", "POB"}
+	wantRoles := []string{"origin", "stop", "stop", "destination"}
+	if len(multiStop.PortCalls) != len(wantCodes) {
+		t.Fatalf("expected %d calls, got %#v", len(wantCodes), multiStop.PortCalls)
+	}
+	for index, call := range multiStop.PortCalls {
+		if call.Sequence != index || call.TerminalCode != wantCodes[index] || call.Role != wantRoles[index] {
+			t.Fatalf("unexpected call %d: %#v", index, call)
+		}
+		wantID := fmt.Sprintf("%s:call:%02d:%s", multiStop.SailingID, index, wantCodes[index])
+		if call.PortCallID != wantID {
+			t.Fatalf("unexpected call ID %q, want %q", call.PortCallID, wantID)
+		}
+	}
+	if multiStop.PortCalls[0].ScheduledDepartureAt != multiStop.ScheduledDepartureAt {
+		t.Fatalf("origin call lost its scheduled departure: %#v", multiStop.PortCalls[0])
+	}
+
+	direct := route.Sailings[1]
+	if len(direct.PortCalls) != 2 || direct.PortCalls[1].TerminalCode != "PSB" ||
+		direct.PortCalls[1].Role != "destination" {
+		t.Fatalf("unexpected direct itinerary: %#v", direct.PortCalls)
+	}
+}
+
+func TestParseSGIPortCalls_DoesNotGuessWhenOperatorAddsUnknownTerminal(t *testing.T) {
+	calls := parseSGIPortCalls(
+		"via Mystery Island (New Harbour) to Mayne Island (Village Bay)",
+		"SWB",
+		"bcf:v1:2026-08-03:SWB-SGI:1200:01",
+		"2026-08-03T12:00:00-07:00",
+	)
+	if len(calls) != 0 {
+		t.Fatalf("expected no structured calls for an unknown official name, got %#v", calls)
+	}
+}
+
+func TestParseSGIPortCalls_DoesNotInventDestinationForViaOnlyText(t *testing.T) {
+	calls := parseSGIPortCalls(
+		"via Pender Island (Otter Bay)",
+		"SWB",
+		"bcf:v1:2026-08-03:SWB-SGI:1200:01",
+		"2026-08-03T12:00:00-07:00",
+	)
+	if len(calls) != 2 || calls[1].Role != "stop" {
+		t.Fatalf("expected operator's via-only semantics to remain a stop, got %#v", calls)
 	}
 }
 
