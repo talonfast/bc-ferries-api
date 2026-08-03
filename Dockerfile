@@ -13,12 +13,17 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     chromium \
-    chromium-sandbox \
     curl \
     fonts-liberation \
     tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --create-home app
+
+# Debian treats the setuid sandbox as a recommendation rather than a hard
+# Chromium dependency, so install it explicitly without invalidating the large
+# browser-runtime layer when the sandbox package changes.
+RUN apt-get update && apt-get install -y --no-install-recommends chromium-sandbox \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
