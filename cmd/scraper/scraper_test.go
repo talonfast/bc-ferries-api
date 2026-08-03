@@ -126,17 +126,17 @@ func TestParseCapacityRoute_DuplicateScheduledDeparturesHaveStableOccurrences(t 
 func TestParseCapacityRoute_ModelsOrderedSouthernGulfIslandCalls(t *testing.T) {
 	fixture := `
 	<table class="detail-departure-table"><tbody>
+	<tr class="mobile-friendly-row">
+		<td><p>5:05 am Salish Raven</p></td><td><span>20%</span></td>
+	</tr>
 	<tr class="sgi-row"><td id="stop-names">
 		via Saturna Island (Lyall Harbour), Mayne Island (Village Bay)
 		to Pender Island (Otter Bay)
 	</td></tr>
 	<tr class="mobile-friendly-row">
-		<td><p>5:05 am Salish Raven</p></td><td><span>20%</span></td>
-	</tr>
-	<tr class="sgi-row"><td id="stop-names">to Galiano Island (Sturdies Bay)</td></tr>
-	<tr class="mobile-friendly-row">
 		<td><p>8:20 am Salish Raven</p></td><td><span>30%</span></td>
 	</tr>
+	<tr class="sgi-row"><td id="stop-names">to Galiano Island (Sturdies Bay)</td></tr>
 	</tbody></table>`
 	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
 	if err != nil {
@@ -179,6 +179,39 @@ func TestParseCapacityRoute_ModelsOrderedSouthernGulfIslandCalls(t *testing.T) {
 	if len(direct.PortCalls) != 2 || direct.PortCalls[1].TerminalCode != "PSB" ||
 		direct.PortCalls[1].Role != "destination" {
 		t.Fatalf("unexpected direct itinerary: %#v", direct.PortCalls)
+	}
+}
+
+func TestParseCapacityRoute_DoesNotBorrowLaterSGIItinerary(t *testing.T) {
+	fixture := `
+	<table class="detail-departure-table"><tbody>
+	<tr class="mobile-friendly-row">
+		<td><p>5:00 am Queen of Cumberland</p></td><td><span>20%</span></td>
+	</tr>
+	<tr class="mobile-friendly-row">
+		<td><p>5:05 am Salish Raven</p></td><td><span>30%</span></td>
+	</tr>
+	<tr class="sgi-row"><td id="stop-names">to Pender Island (Otter Bay)</td></tr>
+	</tbody></table>`
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	route := parseCapacityRoute(
+		document,
+		"SWB",
+		"SGI",
+		time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC),
+	)
+	if len(route.Sailings) != 2 {
+		t.Fatalf("expected two sailings, got %d", len(route.Sailings))
+	}
+	if route.Sailings[0].ItineraryRaw != "" || len(route.Sailings[0].PortCalls) != 0 {
+		t.Fatalf("first sailing borrowed another itinerary: %#v", route.Sailings[0])
+	}
+	if route.Sailings[1].ItineraryRaw != "to Pender Island (Otter Bay)" {
+		t.Fatalf("second sailing lost its itinerary: %#v", route.Sailings[1])
 	}
 }
 

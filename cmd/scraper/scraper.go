@@ -377,7 +377,11 @@ func parseCapacityRoute(
 					ServiceDate: pacificServiceDate(observedAt, false),
 					ScrapedAt:   observedAt.UTC().Format(time.RFC3339),
 				}
-				itineraryRaw := normalizedText(row.PrevAllFiltered("tr.sgi-row").First().Text())
+				// BC Ferries renders an SGI sailing's stopping pattern in the
+				// immediately following row. Only inspect that sibling: searching
+				// farther ahead can incorrectly borrow the next sailing's itinerary
+				// when the operator omits one.
+				itineraryRaw := normalizedText(row.NextFiltered("tr.sgi-row").Text())
 				rowTextLower := strings.ToLower(row.Text())
 				updatesText := normalizedText(row.Find("div.cc-message-updates").Text())
 				hasETA := etaStatusPattern.MatchString(updatesText) || strings.Contains(updatesText, "...")
