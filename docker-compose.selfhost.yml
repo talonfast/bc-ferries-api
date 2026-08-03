@@ -27,6 +27,11 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       db:
         condition: service_healthy
@@ -37,11 +42,14 @@ services:
       DB_HOST: db
       DB_PORT: "5432"
       DB_SSL: disable
+      CHROME_NO_SANDBOX: "true"
       PORT: "8081"
       TZ: America/Vancouver
     ports:
       - "127.0.0.1:8081:8081"
     shm_size: 1gb
+    tmpfs:
+      - /tmp:size=512m,mode=1777,uid=10001,gid=10001
     networks:
       internal:
       shared:

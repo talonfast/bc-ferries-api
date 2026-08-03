@@ -32,6 +32,7 @@ COPY static ./static
 
 ENV CHROME_BIN=/usr/bin/chromium \
     CHROME_PATH=/usr/bin/chromium \
+    HOME=/tmp \
     PORT=8081
 
 USER app

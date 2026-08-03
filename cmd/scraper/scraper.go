@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -473,7 +474,7 @@ func parseCapacityRoute(
  * @return void
  */
 func ScrapeNonCapacityRoutes() {
-	ctx, cancel := chromedp.NewContext(context.Background())
+	ctx, cancel := newBrowserContext(context.Background())
 	defer cancel()
 
 	departureTerminals := staticdata.GetNonCapacityDepartureTerminals()
@@ -515,6 +516,24 @@ func ScrapeNonCapacityRoutes() {
 
 			ScrapeNonCapacityRoute(document, departure, destination, false)
 		}
+	}
+}
+
+func newBrowserContext(parent context.Context) (context.Context, context.CancelFunc) {
+	options := append([]chromedp.ExecAllocatorOption(nil), chromedp.DefaultExecAllocatorOptions[:]...)
+	if strings.EqualFold(os.Getenv("CHROME_NO_SANDBOX"), "true") {
+		// Containers already provide the process boundary. Self-hosted Compose
+		// further runs this process non-root, read-only, without Linux
+		// capabilities, and with no-new-privileges. This flag is never enabled
+		// implicitly for local or non-container execution.
+		options = append(options, chromedp.NoSandbox)
+	}
+
+	allocatorContext, allocatorCancel := chromedp.NewExecAllocator(parent, options...)
+	browserContext, browserCancel := chromedp.NewContext(allocatorContext)
+	return browserContext, func() {
+		browserCancel()
+		allocatorCancel()
 	}
 }
 
