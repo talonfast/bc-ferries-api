@@ -122,6 +122,104 @@ func TestParseCapacityRoute_DuplicateScheduledDeparturesHaveStableOccurrences(t 
 	}
 }
 
+func TestParseOfficialScheduleRoute_UsesPublishedServiceDateAndArrival(t *testing.T) {
+	fixture := `
+	<link rel="canonical" href="https://www.bcferries.com/routes-fares/schedules/daily/TSA-SWB">
+	<table id="dailyScheduleTableOnward"><tbody>
+	<tr class="schedule-table-row">
+	<td></td><td data-sort="08/03/2026 23:30:00">11:30 pm</td>
+	<td>1:05 am</td><td><span>01:35</span></td><td></td>
+	</tr>
+	</tbody></table>`
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	route, ok := parseOfficialScheduleRoute(
+		document,
+		"TSA",
+		"SWB",
+		"2026-08-03",
+		"https://www.bcferries.com/routes-fares/schedules/daily/TSA-SWB?scheduleDate=08%2F03%2F2026",
+		time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC),
+	)
+	if !ok {
+		t.Fatal("expected complete official schedule")
+	}
+	if len(route.Sailings) != 1 {
+		t.Fatalf("expected one sailing, got %d", len(route.Sailings))
+	}
+	sailing := route.Sailings[0]
+	if sailing.SailingID != "bcf:v1:2026-08-03:TSA-SWB:2330:01" {
+		t.Fatalf("unexpected ID %q", sailing.SailingID)
+	}
+	if sailing.ScheduledDepartureAt != "2026-08-03T23:30:00-07:00" {
+		t.Fatalf("unexpected departure instant %q", sailing.ScheduledDepartureAt)
+	}
+	if sailing.ScheduledArrivalAt != "2026-08-04T01:05:00-07:00" {
+		t.Fatalf("unexpected overnight arrival instant %q", sailing.ScheduledArrivalAt)
+	}
+	if route.SailingDuration != "01:35" {
+		t.Fatalf("unexpected duration %q", route.SailingDuration)
+	}
+}
+
+func TestParseOfficialScheduleRoute_ParsesCapturedOperatorPageAsOneGeneration(t *testing.T) {
+	fixturePath := filepath.Join("..", "..", "html", "daily_schedule.html")
+	html, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", fixturePath, err)
+	}
+	document, err := goquery.NewDocumentFromReader(bytes.NewReader(html))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	route, ok := parseOfficialScheduleRoute(
+		document,
+		"SWB",
+		"TSA",
+		"2026-02-21",
+		"https://www.bcferries.com/routes-fares/schedules/daily/SWB-TSA?scheduleDate=02%2F21%2F2026",
+		time.Date(2026, time.February, 21, 18, 0, 0, 0, time.UTC),
+	)
+	if !ok {
+		t.Fatal("expected captured official page to parse completely")
+	}
+	if len(route.Sailings) != 10 {
+		t.Fatalf("expected 10 published sailings, got %d", len(route.Sailings))
+	}
+	if route.Sailings[0].SailingID != "bcf:v1:2026-02-21:SWB-TSA:0700:01" {
+		t.Fatalf("unexpected first sailing ID %q", route.Sailings[0].SailingID)
+	}
+}
+
+func TestParseOfficialScheduleRoute_RejectsWrongDateOrPartialPage(t *testing.T) {
+	fixture := `
+	<table id="dailyScheduleTableOnward"><tbody>
+	<tr class="schedule-table-row">
+	<td data-sort="08/02/2026 14:00:00">2:00 pm</td><td>3:35 pm</td><td>01:35</td>
+	</tr>
+	</tbody></table>`
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, ok := parseOfficialScheduleRoute(
+		document,
+		"TSA",
+		"SWB",
+		"2026-08-03",
+		"https://example.invalid/schedule",
+		time.Now(),
+	)
+	if ok {
+		t.Fatal("expected a response for the wrong service date to be rejected")
+	}
+}
+
 func TestCapacitySailingJSON_UsesNullForUnavailableOperationalTimes(t *testing.T) {
 	fixture := `
 	<table class="detail-departure-table"><tbody>

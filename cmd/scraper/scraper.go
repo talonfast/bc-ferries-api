@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -49,6 +50,12 @@ func MakeCurrentConditionsLink(departure, destination string) string {
  */
 func MakeScheduleLink(departure, destination string) string {
 	return "https://www.bcferries.com/routes-fares/schedules/daily/" + departure + "-" + destination
+}
+
+func MakeScheduleLinkForDate(departure, destination string, serviceDate time.Time) string {
+	values := url.Values{}
+	values.Set("scheduleDate", serviceDate.In(vancouverLocation).Format("01/02/2006"))
+	return MakeScheduleLink(departure, destination) + "?" + values.Encode()
 }
 
 /*
@@ -516,6 +523,11 @@ func parseCapacityRoute(
 				sailing.SailingID = sailingID
 				sailing.ScheduledDepartureAt = scheduledDepartureAt
 				sailing.ScheduleSource = "bc-ferries-current-conditions"
+				sailing.ScheduleSourceURL = MakeCurrentConditionsLink(
+					route.FromTerminalCode,
+					route.ToTerminalCode,
+				)
+				sailing.ScheduleScrapedAt = sailing.ScrapedAt
 				sailing.OperationalSource = "bc-ferries-current-conditions"
 
 				// Add sailing to route
@@ -540,6 +552,205 @@ func parseCapacityRoute(
 	sailingDuration = strings.TrimSpace(sailingDuration)
 	route.SailingDuration = sailingDuration
 	return route
+}
+
+// ScrapeOfficialCapacitySchedules stores today's and tomorrow's published
+// daily timetables for capacity routes. A failed or redirected scrape never
+// deletes the last known-good baseline.
+func ScrapeOfficialCapacitySchedules() {
+	ctx, cancel := newBrowserContext(context.Background())
+	defer cancel()
+
+	departures := staticdata.GetCapacityDepartureTerminals()
+	destinations := staticdata.GetCapacityDestinationTerminals()
+	now := time.Now()
+	serviceDate := now.In(vancouverLocation)
+
+	for dayOffset := 0; dayOffset <= 1; dayOffset++ {
+		requestedDate := serviceDate.AddDate(0, 0, dayOffset)
+		for i, departure := range departures {
+			for _, destination := range destinations[i] {
+				sourceURL := MakeScheduleLinkForDate(departure, destination, requestedDate)
+				requestCtx, requestCancel := context.WithTimeout(ctx, 45*time.Second)
+				html, finalURL, err := fetchWithChromedp(requestCtx, sourceURL)
+				requestCancel()
+				if err != nil {
+					log.Printf("ScrapeOfficialCapacitySchedules: fetch failed for %s: %v", sourceURL, err)
+					continue
+				}
+
+				document, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+				if err != nil {
+					log.Printf("ScrapeOfficialCapacitySchedules: parse failed for %s: %v", sourceURL, err)
+					continue
+				}
+				if !isDailySchedulePage(document, finalURL) {
+					log.Printf("ScrapeOfficialCapacitySchedules: rejected non-daily response for %s (final URL %s)", sourceURL, finalURL)
+					continue
+				}
+
+				route, ok := parseOfficialScheduleRoute(
+					document,
+					departure,
+					destination,
+					requestedDate.Format("2006-01-02"),
+					sourceURL,
+					now,
+				)
+				if !ok {
+					log.Printf("ScrapeOfficialCapacitySchedules: rejected incomplete schedule for %s", sourceURL)
+					continue
+				}
+				if err := persistOfficialScheduleRoute(route); err != nil {
+					log.Printf("ScrapeOfficialCapacitySchedules: persist failed for %s: %v", sourceURL, err)
+				}
+			}
+		}
+	}
+}
+
+func parseOfficialScheduleRoute(
+	document *goquery.Document,
+	fromTerminalCode string,
+	toTerminalCode string,
+	expectedServiceDate string,
+	sourceURL string,
+	observedAt time.Time,
+) (models.OfficialScheduleRoute, bool) {
+	route := models.OfficialScheduleRoute{
+		RouteCode:        fromTerminalCode + toTerminalCode,
+		FromTerminalCode: fromTerminalCode,
+		ToTerminalCode:   toTerminalCode,
+		ServiceDate:      expectedServiceDate,
+		Sailings:         []models.OfficialScheduleSailing{},
+		SourceURL:        sourceURL,
+		ScrapedAt:        observedAt.UTC().Format(time.RFC3339),
+	}
+	table := document.Find("#dailyScheduleTableOnward").First()
+	if table.Length() == 0 {
+		return route, false
+	}
+
+	timePattern := regexp.MustCompile(`(?i)\b\d{1,2}:\d{2}\s*[ap]m\b`)
+	durationPattern := regexp.MustCompile(`\b\d{1,2}:\d{2}\b`)
+	occurrences := make(map[string]int)
+	invalidRows := 0
+
+	table.Find("tbody").First().ChildrenFiltered("tr.schedule-table-row").Each(func(_ int, row *goquery.Selection) {
+		if row.Find("th").Length() > 0 {
+			return
+		}
+		rowText := strings.ToLower(normalizedText(row.Text()))
+		if strings.Contains(rowText, "dangerous goods only") || strings.Contains(rowText, "no passengers permitted") {
+			return
+		}
+
+		departureCell := row.Find("td[data-sort]").First()
+		dateSort, exists := departureCell.Attr("data-sort")
+		if !exists {
+			invalidRows++
+			return
+		}
+		departureAt, err := time.ParseInLocation("01/02/2006 15:04:05", strings.TrimSpace(dateSort), vancouverLocation)
+		if err != nil || departureAt.Format("2006-01-02") != expectedServiceDate {
+			invalidRows++
+			return
+		}
+
+		var clockTimes []string
+		row.ChildrenFiltered("td").Each(func(_ int, cell *goquery.Selection) {
+			if value := timePattern.FindString(normalizedText(cell.Text())); value != "" {
+				clockTimes = append(clockTimes, strings.ToLower(normalizedText(value)))
+			}
+		})
+		if len(clockTimes) < 2 {
+			invalidRows++
+			return
+		}
+
+		arrivalClock, err := time.ParseInLocation(
+			"2006-01-02 3:04 pm",
+			expectedServiceDate+" "+clockTimes[1],
+			vancouverLocation,
+		)
+		if err != nil {
+			invalidRows++
+			return
+		}
+		if arrivalClock.Before(departureAt) {
+			arrivalClock = arrivalClock.AddDate(0, 0, 1)
+		}
+
+		departureTime := departureAt.Format("3:04 pm")
+		occurrenceKey := expectedServiceDate + "\x00" + departureTime
+		occurrences[occurrenceKey]++
+		sailingID, scheduledDepartureAt, ok := canonicalSailingIdentity(
+			fromTerminalCode,
+			toTerminalCode,
+			expectedServiceDate,
+			departureTime,
+			occurrences[occurrenceKey],
+		)
+		if !ok {
+			invalidRows++
+			return
+		}
+
+		if route.SailingDuration == "" {
+			row.ChildrenFiltered("td").Each(func(_ int, cell *goquery.Selection) {
+				if route.SailingDuration != "" {
+					return
+				}
+				text := normalizedText(cell.Text())
+				if strings.Contains(strings.ToLower(text), "am") || strings.Contains(strings.ToLower(text), "pm") {
+					return
+				}
+				route.SailingDuration = durationPattern.FindString(text)
+			})
+		}
+
+		route.Sailings = append(route.Sailings, models.OfficialScheduleSailing{
+			SailingID:              sailingID,
+			ServiceDate:            expectedServiceDate,
+			ScheduledDepartureTime: departureTime,
+			ScheduledArrivalTime:   arrivalClock.Format("3:04 pm"),
+			ScheduledDepartureAt:   scheduledDepartureAt,
+			ScheduledArrivalAt:     arrivalClock.Format(time.RFC3339),
+		})
+	})
+
+	// Reject partial pages. One malformed published row is safer to retain in
+	// the previous generation than to silently publish an incomplete timetable.
+	if len(route.Sailings) == 0 || invalidRows > 0 || route.SailingDuration == "" {
+		return route, false
+	}
+	return route, true
+}
+
+func persistOfficialScheduleRoute(route models.OfficialScheduleRoute) error {
+	sailingsJSON, err := json.Marshal(route.Sailings)
+	if err != nil {
+		return fmt.Errorf("marshal official sailings: %w", err)
+	}
+
+	_, err = db.Conn.Exec(`
+		INSERT INTO official_schedule_routes (
+			route_code, service_date, from_terminal_code, to_terminal_code,
+			sailing_duration, sailings, source_url, scraped_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (route_code, service_date) DO UPDATE SET
+			from_terminal_code = EXCLUDED.from_terminal_code,
+			to_terminal_code = EXCLUDED.to_terminal_code,
+			sailing_duration = EXCLUDED.sailing_duration,
+			sailings = EXCLUDED.sailings,
+			source_url = EXCLUDED.source_url,
+			scraped_at = EXCLUDED.scraped_at
+	`, route.RouteCode, route.ServiceDate, route.FromTerminalCode, route.ToTerminalCode,
+		route.SailingDuration, sailingsJSON, route.SourceURL, route.ScrapedAt)
+	if err != nil {
+		return fmt.Errorf("upsert official route %s on %s: %w", route.RouteCode, route.ServiceDate, err)
+	}
+	return nil
 }
 
 /*

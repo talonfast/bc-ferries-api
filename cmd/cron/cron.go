@@ -13,7 +13,9 @@ import (
  * Initializes and starts scheduled background scraping tasks using gocron.
  *
  * - Scrapes capacity route data every 1 minute.
- * - Scrapes non-capacity route data every 4 hours.
+ * - Scrapes official capacity schedules, then non-capacity route data, every
+ *   4 hours. They share one singleton job so only one Chromium workload runs
+ *   at a time.
  * - Skips an overlapping run of the same scraper if the previous run has not
  *   completed yet.
  *
@@ -29,6 +31,7 @@ func SetupCron() {
 	})
 
 	s.Every(4).Hour().StartImmediately().SingletonMode().Do(func() {
+		scraper.ScrapeOfficialCapacitySchedules()
 		scraper.ScrapeNonCapacityRoutes()
 	})
 

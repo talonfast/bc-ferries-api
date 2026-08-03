@@ -17,6 +17,9 @@ func main() {
 	config.LoadEnv()
 	db.Init()
 	defer db.Conn.Close()
+	if err := db.Migrate(); err != nil {
+		log.Fatal(err)
+	}
 
 	cron.SetupCron()
 

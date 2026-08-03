@@ -261,6 +261,73 @@ func HealthCheck(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Write(jsonString)
 }
 
+type capacityReadinessResponse struct {
+	Ready                    bool   `json:"ready"`
+	OperationalRoutes        int    `json:"operationalRoutes"`
+	OperationalSailings      int    `json:"operationalSailings"`
+	OperationalAgeSeconds    *int64 `json:"operationalAgeSeconds"`
+	OfficialTodayRoutes      int    `json:"officialTodayRoutes"`
+	OfficialTodaySailings    int    `json:"officialTodaySailings"`
+	OfficialTomorrowRoutes   int    `json:"officialTomorrowRoutes"`
+	OfficialTomorrowSailings int    `json:"officialTomorrowSailings"`
+	OfficialAgeSeconds       *int64 `json:"officialAgeSeconds"`
+}
+
+func ageSeconds(value time.Time) int64 {
+	age := time.Since(value).Seconds()
+	if age < 0 {
+		return 0
+	}
+	return int64(age)
+}
+
+// ReadyCheck verifies source coverage and freshness. HealthCheck remains a
+// liveness probe so a temporary upstream outage does not restart the process
+// and destroy the useful last-known-good generation.
+func ReadyCheck(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+
+	health, err := db.GetCapacityDataHealth()
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]any{"ready": false, "error": "data health query failed"})
+		return
+	}
+
+	response := capacityReadinessResponse{
+		OperationalRoutes:        health.OperationalRoutes,
+		OperationalSailings:      health.OperationalSailings,
+		OfficialTodayRoutes:      health.OfficialTodayRoutes,
+		OfficialTodaySailings:    health.OfficialTodaySailings,
+		OfficialTomorrowRoutes:   health.OfficialTomorrowRoutes,
+		OfficialTomorrowSailings: health.OfficialTomorrowSailings,
+	}
+	if health.OldestOperationalScrape.Valid {
+		age := ageSeconds(health.OldestOperationalScrape.Time)
+		response.OperationalAgeSeconds = &age
+	}
+	if health.OldestOfficialScrape.Valid {
+		age := ageSeconds(health.OldestOfficialScrape.Time)
+		response.OfficialAgeSeconds = &age
+	}
+
+	const expectedCapacityRoutes = 12
+	response.Ready = response.OperationalRoutes == expectedCapacityRoutes &&
+		response.OperationalSailings > 0 && response.OperationalAgeSeconds != nil &&
+		*response.OperationalAgeSeconds <= 3*60 &&
+		response.OfficialTodayRoutes == expectedCapacityRoutes && response.OfficialTodaySailings > 0 &&
+		response.OfficialTomorrowRoutes == expectedCapacityRoutes && response.OfficialTomorrowSailings > 0 &&
+		response.OfficialAgeSeconds != nil && *response.OfficialAgeSeconds <= 6*60*60
+
+	status := http.StatusOK
+	if !response.Ready {
+		status = http.StatusServiceUnavailable
+	}
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(response)
+}
+
 /********************/
 /* Helper Functions */
 /********************/

@@ -34,8 +34,20 @@
                     "type": "string",
                     "format": "date-time"
                   },
+                  "scheduledArrivalAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
                   "scheduleSource": {
                     "type": "string"
+                  },
+                  "scheduleSourceUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "scheduleScrapedAt": {
+                    "type": "string",
+                    "format": "date-time"
                   },
                   "operationalSource": {
                     "type": "string"
@@ -61,6 +73,10 @@
                     ]
                   },
                   "scheduledDepartureTime": {
+                    "type": "string",
+                    "pattern": "^(1[0-2]|0?[1-9]):[0-5][0-9] (am|pm)$"
+                  },
+                  "scheduledArrivalTime": {
                     "type": "string",
                     "pattern": "^(1[0-2]|0?[1-9]):[0-5][0-9] (am|pm)$"
                   },
@@ -139,6 +155,8 @@
                   "sailingId",
                   "scheduledDepartureAt",
                   "scheduleSource",
+                  "scheduleSourceUrl",
+                  "scheduleScrapedAt",
                   "operationalSource",
                   "time",
                   "arrivalTime",

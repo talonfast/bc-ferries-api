@@ -21,7 +21,10 @@ type CapacitySailing struct {
 	// deliberately excluded.
 	SailingID            string `json:"sailingId"`
 	ScheduledDepartureAt string `json:"scheduledDepartureAt"`
+	ScheduledArrivalAt   string `json:"scheduledArrivalAt,omitempty"`
 	ScheduleSource       string `json:"scheduleSource"`
+	ScheduleSourceURL    string `json:"scheduleSourceUrl"`
+	ScheduleScrapedAt    string `json:"scheduleScrapedAt"`
 	OperationalSource    string `json:"operationalSource"`
 
 	// Deprecated compatibility fields. Their meaning changes with status:
@@ -34,6 +37,7 @@ type CapacitySailing struct {
 	// fields encode unavailable values as JSON null instead of an ambiguous
 	// empty string.
 	ScheduledDepartureTime string  `json:"scheduledDepartureTime"`
+	ScheduledArrivalTime   string  `json:"scheduledArrivalTime,omitempty"`
 	ActualDepartureTime    *string `json:"actualDepartureTime"`
 	EstimatedArrivalTime   *string `json:"estimatedArrivalTime"`
 	ActualArrivalTime      *string `json:"actualArrivalTime"`
@@ -46,6 +50,29 @@ type CapacitySailing struct {
 	OversizeFill  int    `json:"oversizeFill"`
 	VesselName    string `json:"vesselName"`
 	VesselStatus  string `json:"vesselStatus"`
+}
+
+// OfficialScheduleRoute is the independently persisted timetable baseline
+// published on BC Ferries' daily schedule page. It is never overwritten with
+// current-conditions or AIS observations.
+type OfficialScheduleRoute struct {
+	RouteCode        string                    `json:"routeCode"`
+	FromTerminalCode string                    `json:"fromTerminalCode"`
+	ToTerminalCode   string                    `json:"toTerminalCode"`
+	ServiceDate      string                    `json:"serviceDate"`
+	SailingDuration  string                    `json:"sailingDuration"`
+	Sailings         []OfficialScheduleSailing `json:"sailings"`
+	SourceURL        string                    `json:"sourceUrl"`
+	ScrapedAt        string                    `json:"scrapedAt"`
+}
+
+type OfficialScheduleSailing struct {
+	SailingID              string `json:"sailingId"`
+	ServiceDate            string `json:"serviceDate"`
+	ScheduledDepartureTime string `json:"scheduledDepartureTime"`
+	ScheduledArrivalTime   string `json:"scheduledArrivalTime"`
+	ScheduledDepartureAt   string `json:"scheduledDepartureAt"`
+	ScheduledArrivalAt     string `json:"scheduledArrivalAt"`
 }
 
 type NonCapacityResponse struct {

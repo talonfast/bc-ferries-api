@@ -93,14 +93,26 @@ Capacity sailings expose explicit time fields so consumers do not have to infer 
 | `serviceDate` | Sailing date in the `America/Vancouver` timezone. |
 | `scheduledDepartureTime` | Published departure time. This remains unchanged when a sailing is delayed. |
 | `scheduledDepartureAt` | Published departure as an RFC 3339 instant with the Vancouver UTC offset in effect on the service date. |
+| `scheduledArrivalTime` / `scheduledArrivalAt` | Published arrival wall time and instant when the official daily schedule is available. |
 | `actualDepartureTime` | Observed departure time, or `null` until the vessel departs. |
 | `estimatedArrivalTime` | Current ETA, or `null` when no ETA is published. |
 | `actualArrivalTime` | Observed arrival time, or `null` until the vessel arrives. |
 | `scrapedAt` | UTC timestamp for when the current-conditions page was observed. |
 | `scheduleSource` | Operator source used for the immutable schedule baseline. |
+| `scheduleSourceUrl` / `scheduleScrapedAt` | Exact baseline page and the time that generation was observed. |
 | `operationalSource` | Operator source used for status, actual times, vessel, and capacity observations. |
 
 The legacy `time` and `arrivalTime` fields remain for compatibility. Their meaning varies with `sailingStatus`, so new consumers should use the explicit fields above.
+
+The canonical identity, merge precedence, rejection rules, and AIS boundary are
+documented in [Trusted sailing data model](docs/TRUSTED_SAILINGS.md).
+
+`GET /healthcheck/` is a liveness probe for the process and database. `GET
+/readycheck/` additionally requires all 12 capacity directions, operational
+observations no older than three minutes, and complete official schedules for
+today and tomorrow no older than six hours. An upstream outage therefore makes
+the service unready without restarting it or discarding its last-known-good
+generation.
 
 #### Capacity Route Codes:
 
