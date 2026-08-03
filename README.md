@@ -109,10 +109,12 @@ documented in [Trusted sailing data model](docs/TRUSTED_SAILINGS.md).
 
 `GET /healthcheck/` is a liveness probe for the process and database. `GET
 /readycheck/` additionally requires all 12 capacity directions, operational
-observations no older than three minutes, and complete official schedules for
-today and tomorrow no older than six hours. An upstream outage therefore makes
-the service unready without restarting it or discarding its last-known-good
-generation.
+observations no older than three minutes, and the nine fixed-arrival daily
+schedule directions for today and tomorrow no older than six hours. Southern
+Gulf Islands variable-arrival rows and the Horseshoe Bay-Bowen Island seasonal
+page remain explicit current-conditions fallbacks. An upstream outage therefore
+makes the service unready without restarting it or discarding its
+last-known-good generation.
 
 #### Capacity Route Codes:
 

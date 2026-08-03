@@ -1,5 +1,10 @@
 package staticdata
 
+const (
+	ExpectedCapacityRouteCount      = 12
+	ExpectedDailyScheduleRouteCount = 9
+)
+
 /*
  * GetCapacityDepartureTerminals
  *

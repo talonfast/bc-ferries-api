@@ -9,6 +9,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/samuel-pratt/bc-ferries-api/cmd/db"
 	"github.com/samuel-pratt/bc-ferries-api/cmd/models"
+	"github.com/samuel-pratt/bc-ferries-api/cmd/staticdata"
 )
 
 /**************/
@@ -312,12 +313,11 @@ func ReadyCheck(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		response.OfficialAgeSeconds = &age
 	}
 
-	const expectedCapacityRoutes = 12
-	response.Ready = response.OperationalRoutes == expectedCapacityRoutes &&
+	response.Ready = response.OperationalRoutes == staticdata.ExpectedCapacityRouteCount &&
 		response.OperationalSailings > 0 && response.OperationalAgeSeconds != nil &&
 		*response.OperationalAgeSeconds <= 3*60 &&
-		response.OfficialTodayRoutes == expectedCapacityRoutes && response.OfficialTodaySailings > 0 &&
-		response.OfficialTomorrowRoutes == expectedCapacityRoutes && response.OfficialTomorrowSailings > 0 &&
+		response.OfficialTodayRoutes >= staticdata.ExpectedDailyScheduleRouteCount && response.OfficialTodaySailings > 0 &&
+		response.OfficialTomorrowRoutes >= staticdata.ExpectedDailyScheduleRouteCount && response.OfficialTomorrowSailings > 0 &&
 		response.OfficialAgeSeconds != nil && *response.OfficialAgeSeconds <= 6*60*60
 
 	status := http.StatusOK

@@ -48,6 +48,11 @@ with no matching operational record is retained with
   health checks can detect stale data instead of treating it as fresh.
 - Today and tomorrow are refreshed every four hours. Current conditions remain
   a one-minute operational feed.
+- Nine capacity directions currently have a complete fixed-arrival daily-page
+  baseline. Southern Gulf Islands variable-arrival rows and Horseshoe Bay-Bowen
+  Island's seasonal redirect are retained from the official current-conditions
+  page with explicit fallback provenance until their schedule adapters are
+  implemented.
 
 The official source surfaces are the [daily schedule](https://www.bcferries.com/routes-fares/schedules/daily/TSA-SWB)
 and [current conditions](https://www.bcferries.com/current-conditions/TSA-SWB)
