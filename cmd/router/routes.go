@@ -313,9 +313,14 @@ func ReadyCheck(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		response.OfficialAgeSeconds = &age
 	}
 
+	// A complete operational sweep currently takes roughly eight minutes
+	// because BC Ferries' route pages are fetched serially and some sailings
+	// require a second capacity-details request. The freshness window must cover
+	// one full sweep while still detecting a genuinely stalled scraper.
+	const maximumOperationalAge = 15 * time.Minute
 	response.Ready = response.OperationalRoutes == staticdata.ExpectedCapacityRouteCount &&
 		response.OperationalSailings > 0 && response.OperationalAgeSeconds != nil &&
-		*response.OperationalAgeSeconds <= 3*60 &&
+		*response.OperationalAgeSeconds <= int64(maximumOperationalAge.Seconds()) &&
 		response.OfficialTodayRoutes >= staticdata.ExpectedDailyScheduleRouteCount && response.OfficialTodaySailings > 0 &&
 		response.OfficialTomorrowRoutes >= staticdata.ExpectedDailyScheduleRouteCount && response.OfficialTomorrowSailings > 0 &&
 		response.OfficialAgeSeconds != nil && *response.OfficialAgeSeconds <= 6*60*60
