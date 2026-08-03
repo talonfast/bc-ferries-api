@@ -13,6 +13,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     chromium \
+    chromium-sandbox \
     curl \
     fonts-liberation \
     tzdata \
