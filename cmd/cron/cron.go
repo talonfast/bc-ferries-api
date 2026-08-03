@@ -14,6 +14,8 @@ import (
  *
  * - Scrapes capacity route data every 1 minute.
  * - Scrapes non-capacity route data every 4 hours.
+ * - Skips an overlapping run of the same scraper if the previous run has not
+ *   completed yet.
  *
  * The scheduler runs asynchronously in the background.
  *
@@ -22,11 +24,11 @@ import (
 func SetupCron() {
 	s := gocron.NewScheduler(time.UTC)
 
-	s.Every(1).Minute().StartImmediately().Do(func() {
+	s.Every(1).Minute().StartImmediately().SingletonMode().Do(func() {
 		scraper.ScrapeCapacityRoutes()
 	})
 
-	s.Every(4).Hour().StartImmediately().Do(func() {
+	s.Every(4).Hour().StartImmediately().SingletonMode().Do(func() {
 		scraper.ScrapeNonCapacityRoutes()
 	})
 
