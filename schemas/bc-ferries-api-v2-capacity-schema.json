@@ -26,6 +26,20 @@
               "items": {
                 "type": "object",
                 "properties": {
+                  "sailingId": {
+                    "type": "string",
+                    "pattern": "^bcf:v1:\\d{4}-\\d{2}-\\d{2}:[A-Z0-9]+-[A-Z0-9]+:\\d{4}:\\d{2}$"
+                  },
+                  "scheduledDepartureAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "scheduleSource": {
+                    "type": "string"
+                  },
+                  "operationalSource": {
+                    "type": "string"
+                  },
                   "time": {
                     "oneOf": [
                       {
@@ -122,6 +136,10 @@
                   }
                 },
                 "required": [
+                  "sailingId",
+                  "scheduledDepartureAt",
+                  "scheduleSource",
+                  "operationalSource",
                   "time",
                   "arrivalTime",
                   "scheduledDepartureTime",

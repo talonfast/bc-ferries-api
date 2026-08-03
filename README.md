@@ -89,12 +89,16 @@ Capacity sailings expose explicit time fields so consumers do not have to infer 
 
 | Field | Meaning |
 | --- | --- |
+| `sailingId` | Versioned canonical identity: operator, Vancouver service date, direction, scheduled departure, and occurrence. |
 | `serviceDate` | Sailing date in the `America/Vancouver` timezone. |
 | `scheduledDepartureTime` | Published departure time. This remains unchanged when a sailing is delayed. |
+| `scheduledDepartureAt` | Published departure as an RFC 3339 instant with the Vancouver UTC offset in effect on the service date. |
 | `actualDepartureTime` | Observed departure time, or `null` until the vessel departs. |
 | `estimatedArrivalTime` | Current ETA, or `null` when no ETA is published. |
 | `actualArrivalTime` | Observed arrival time, or `null` until the vessel arrives. |
 | `scrapedAt` | UTC timestamp for when the current-conditions page was observed. |
+| `scheduleSource` | Operator source used for the immutable schedule baseline. |
+| `operationalSource` | Operator source used for status, actual times, vessel, and capacity observations. |
 
 The legacy `time` and `arrivalTime` fields remain for compatibility. Their meaning varies with `sailingStatus`, so new consumers should use the explicit fields above.
 

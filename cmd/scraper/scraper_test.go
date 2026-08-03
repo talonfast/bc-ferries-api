@@ -31,6 +31,12 @@ func TestParseCapacityRoute_PreservesScheduledAndOperationalTimes(t *testing.T) 
 	}
 
 	current := route.Sailings[0]
+	if current.SailingID != "bcf:v1:2026-08-02:TSA-SWB:1400:01" {
+		t.Fatalf("unexpected canonical sailing ID %q", current.SailingID)
+	}
+	if current.ScheduledDepartureAt != "2026-08-02T14:00:00-07:00" {
+		t.Fatalf("unexpected scheduled departure instant %q", current.ScheduledDepartureAt)
+	}
 	if current.SailingStatus != "current" {
 		t.Fatalf("expected current sailing, got %q", current.SailingStatus)
 	}
@@ -85,6 +91,34 @@ func TestParseCapacityRoute_PreservesScheduledAndOperationalTimes(t *testing.T) 
 		if sailing.ScrapedAt != "2026-08-02T22:00:00Z" {
 			t.Fatalf("unexpected scrape timestamp %q", sailing.ScrapedAt)
 		}
+	}
+}
+
+func TestParseCapacityRoute_DuplicateScheduledDeparturesHaveStableOccurrences(t *testing.T) {
+	fixture := `
+	<table class="detail-departure-table"><tbody>
+	<tr class="mobile-friendly-row"><td><p>7:00 am Vessel One</p></td><td><span>20%</span></td></tr>
+	<tr class="mobile-friendly-row"><td><p>7:00 am Vessel Two</p></td><td><span>30%</span></td></tr>
+	</tbody></table>`
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	route := parseCapacityRoute(
+		document,
+		"TSA",
+		"SWB",
+		time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC),
+	)
+	if len(route.Sailings) != 2 {
+		t.Fatalf("expected two sailings, got %d", len(route.Sailings))
+	}
+	if route.Sailings[0].SailingID != "bcf:v1:2026-08-03:TSA-SWB:0700:01" {
+		t.Fatalf("unexpected first ID %q", route.Sailings[0].SailingID)
+	}
+	if route.Sailings[1].SailingID != "bcf:v1:2026-08-03:TSA-SWB:0700:02" {
+		t.Fatalf("unexpected second ID %q", route.Sailings[1].SailingID)
 	}
 }
 

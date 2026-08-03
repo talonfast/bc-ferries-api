@@ -15,6 +15,15 @@ type CapacityRoute struct {
 }
 
 type CapacitySailing struct {
+	// SailingID is a stable, versioned identity derived from the operator,
+	// Vancouver service date, direction, scheduled departure, and occurrence.
+	// Mutable observations such as vessel assignment and actual departure are
+	// deliberately excluded.
+	SailingID            string `json:"sailingId"`
+	ScheduledDepartureAt string `json:"scheduledDepartureAt"`
+	ScheduleSource       string `json:"scheduleSource"`
+	OperationalSource    string `json:"operationalSource"`
+
 	// Deprecated compatibility fields. Their meaning changes with status:
 	// future uses the scheduled departure, current/past use the actual
 	// departure, current uses ETA for arrival, and past uses actual arrival.

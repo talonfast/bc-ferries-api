@@ -120,6 +120,46 @@ func stringPointer(value string) *string {
 	return &value
 }
 
+func canonicalSailingIdentity(
+	fromTerminalCode string,
+	toTerminalCode string,
+	serviceDate string,
+	scheduledDepartureTime string,
+	occurrence int,
+) (sailingID string, scheduledDepartureAt string, ok bool) {
+	if occurrence < 1 {
+		return "", "", false
+	}
+
+	serviceDate = strings.TrimSpace(serviceDate)
+	scheduledDepartureTime = strings.ToLower(normalizedText(scheduledDepartureTime))
+	scheduledAt, err := time.ParseInLocation(
+		"2006-01-02 3:04 pm",
+		serviceDate+" "+scheduledDepartureTime,
+		vancouverLocation,
+	)
+	if err != nil {
+		return "", "", false
+	}
+
+	from := strings.ToUpper(strings.TrimSpace(fromTerminalCode))
+	to := strings.ToUpper(strings.TrimSpace(toTerminalCode))
+	if from == "" || to == "" {
+		return "", "", false
+	}
+
+	return fmt.Sprintf(
+			"bcf:v1:%s:%s-%s:%s:%02d",
+			serviceDate,
+			from,
+			to,
+			scheduledAt.Format("1504"),
+			occurrence,
+		),
+		scheduledAt.Format(time.RFC3339),
+		true
+}
+
 /*
  * ScrapeCapacityRoutes
  *
@@ -227,6 +267,7 @@ func parseCapacityRoute(
 		FromTerminalCode: fromTerminalCode,
 		Sailings:         []models.CapacitySailing{},
 	}
+	occurrences := make(map[string]int)
 
 	document.Find("table.detail-departure-table").Each(func(i int, table *goquery.Selection) {
 		table.Find("tbody").Each(func(j int, tbody *goquery.Selection) {
@@ -454,6 +495,28 @@ func parseCapacityRoute(
 					)
 					return
 				}
+
+				occurrenceKey := sailing.ServiceDate + "\x00" + sailing.ScheduledDepartureTime
+				occurrences[occurrenceKey]++
+				sailingID, scheduledDepartureAt, ok := canonicalSailingIdentity(
+					route.FromTerminalCode,
+					route.ToTerminalCode,
+					sailing.ServiceDate,
+					sailing.ScheduledDepartureTime,
+					occurrences[occurrenceKey],
+				)
+				if !ok {
+					log.Printf(
+						"parseCapacityRoute: skipping sailing with invalid canonical identity for route %s: %q",
+						route.RouteCode,
+						normalizedText(row.Text()),
+					)
+					return
+				}
+				sailing.SailingID = sailingID
+				sailing.ScheduledDepartureAt = scheduledDepartureAt
+				sailing.ScheduleSource = "bc-ferries-current-conditions"
+				sailing.OperationalSource = "bc-ferries-current-conditions"
 
 				// Add sailing to route
 				route.Sailings = append(route.Sailings, sailing)
