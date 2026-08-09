@@ -391,6 +391,53 @@ func TestParseSeasonalScheduleSailingsForDate_AcceptsPublishedNoServiceDay(t *te
 	}
 }
 
+func TestParseSeasonalScheduleSailingsForDate_AcceptsPublishedNoServicePlaceholder(t *testing.T) {
+	fixture := `
+	<table class="table table-seasonal-schedule">
+	<thead><tr data-schedule-day="Mondays"><th></th><th>Depart</th><th>Arrive</th><th>Duration</th></tr></thead>
+	<tbody><tr class="schedule-table-row"><td></td><td>12:00 am<p class="red-text">No sailings available on this route for these dates.</p></td><td>12:00 am</td><td></td></tr></tbody>
+	</table>`
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sailings, duration, ok := parseSeasonalScheduleSailingsForDate(
+		document,
+		time.Date(2026, time.August, 10, 12, 0, 0, 0, vancouverLocation),
+	)
+	if !ok || len(sailings) != 0 || duration != "" {
+		t.Fatalf("expected the operator's midnight placeholder to mean no service, got ok=%v duration=%q sailings=%#v", ok, duration, sailings)
+	}
+}
+
+func TestParseSeasonalOfficialScheduleRoute_AcceptsOnlyConnectingJourneysAsNoDirectService(t *testing.T) {
+	fixture := `
+	<table class="table table-seasonal-schedule">
+	<thead><tr data-schedule-day="Sundays"><th></th><th>Depart</th><th>Arrive</th><th>Duration</th></tr></thead>
+	<tbody>
+	<tr class="schedule-table-row"><td></td><td>9:15 am</td><td>11:43 am</td><td>2h 28m</td><td>Stop at Galiano Island; Transfer at Mayne Island</td></tr>
+	<tr class="schedule-table-row"><td></td><td>11:00 am</td><td>3:30 pm</td><td>4h 30m</td><td>Thru fare via Swartz Bay</td></tr>
+	</tbody>
+	</table>`
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	route, ok := parseSeasonalOfficialScheduleRoute(
+		document,
+		"TSA",
+		"PST",
+		time.Date(2026, time.August, 9, 12, 0, 0, 0, vancouverLocation),
+		"https://www.bcferries.com/routes-fares/schedules/seasonal/TSA-PST",
+		time.Date(2026, time.August, 9, 9, 0, 0, 0, time.UTC),
+	)
+	if !ok || len(route.Sailings) != 0 {
+		t.Fatalf("expected a valid no-direct-service route, got ok=%v route=%#v", ok, route)
+	}
+}
+
 func TestParseSeasonalScheduleSailingsForDate_RejectsMalformedApplicableRow(t *testing.T) {
 	fixture := `
 	<table class="table table-seasonal-schedule">

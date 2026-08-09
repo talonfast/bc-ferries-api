@@ -18,6 +18,10 @@ import (
 
 var seasonalClockPattern = regexp.MustCompile(`(?i)\b\d{1,2}:\d{2}\s*[ap]m`)
 
+var seasonalNoServicePattern = regexp.MustCompile(
+	`(?i)no sailings? available\b|no (?:direct )?service\b`,
+)
+
 var seasonalDateTokenPattern = regexp.MustCompile(
 	`(?i)(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|` +
 		`jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|` +
@@ -151,13 +155,20 @@ func parseSeasonalScheduleSailingsForDate(
 		if cells.Length() < 3 {
 			return
 		}
+		// The operator publishes a synthetic midnight-to-midnight row when a
+		// weekday has no service. Its explanatory text is authoritative; the
+		// placeholder clocks and missing duration are not a malformed sailing.
+		fullRowText := normalizedText(row.Text())
+		if seasonalNoServicePattern.MatchString(fullRowText) {
+			return
+		}
 		// The physical-destination pages also advertise connecting journeys.
 		// Those rows do not describe a same-vessel port call and must never be
 		// folded into the canonical itinerary for an operational SGI sailing.
-		fullRowText := strings.ToLower(normalizedText(row.Text()))
-		if strings.Contains(fullRowText, "thru fare") ||
-			strings.Contains(fullRowText, "through fare") ||
-			strings.Contains(fullRowText, "transfer") {
+		fullRowTextLower := strings.ToLower(fullRowText)
+		if strings.Contains(fullRowTextLower, "thru fare") ||
+			strings.Contains(fullRowTextLower, "through fare") ||
+			strings.Contains(fullRowTextLower, "transfer") {
 			return
 		}
 		departureCell := cells.Eq(1)
@@ -275,7 +286,11 @@ func parseSeasonalOfficialScheduleRoute(
 			ScheduledArrivalAt:     arrival.Format(time.RFC3339),
 		})
 	}
-	return route, len(route.Sailings) > 0
+	// A complete official page with no same-vessel sailings is trustworthy
+	// negative schedule data. Preserve that distinction from a malformed or
+	// unrecognized page so one no-service destination does not invalidate the
+	// entire grouped Southern Gulf Islands schedule.
+	return route, true
 }
 
 func terminalDescriptionForCode(code string) (terminalDescription, bool) {
