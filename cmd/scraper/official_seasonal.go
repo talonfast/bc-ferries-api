@@ -39,7 +39,13 @@ var seasonalMonths = map[string]time.Month{
 	"dec": time.December, "december": time.December,
 }
 
-var southernGulfTerminalCodes = []string{"PSB", "PVB", "POB", "PST", "PLH"}
+var southernGulfTerminalCodesByOrigin = map[string][]string{
+	// Swartz Bay has no Long Harbour service; Salt Spring traffic from Victoria
+	// uses the separate Fulford Harbour route. Requiring the non-existent page
+	// made the otherwise complete official SWB itinerary fail closed.
+	"SWB": {"PSB", "PVB", "POB", "PST"},
+	"TSA": {"PSB", "PVB", "POB", "PST", "PLH"},
+}
 
 func normalizedWeekday(value string) string {
 	value = strings.TrimSpace(strings.ToUpper(value))
@@ -457,9 +463,10 @@ func scrapeOfficialSeasonalCapacitySchedules(
 	}
 
 	for _, origin := range []string{"SWB", "TSA"} {
+		destinations := southernGulfTerminalCodesByOrigin[origin]
 		physicalByDate := make(map[string]map[string]models.OfficialScheduleRoute)
 		complete := true
-		for _, destination := range southernGulfTerminalCodes {
+		for _, destination := range destinations {
 			sourceURL := MakeSeasonalScheduleLink(origin, destination)
 			document, err := fetchOfficialScheduleDocument(ctx, sourceURL)
 			if err != nil {
@@ -492,7 +499,7 @@ func scrapeOfficialSeasonalCapacitySchedules(
 		for _, date := range serviceDates {
 			dateText := date.In(vancouverLocation).Format("2006-01-02")
 			routes := physicalByDate[dateText]
-			if len(routes) != len(southernGulfTerminalCodes) {
+			if len(routes) != len(destinations) {
 				continue
 			}
 			grouped, ok := buildOfficialSGIRoute(origin, date, routes, observedAt)

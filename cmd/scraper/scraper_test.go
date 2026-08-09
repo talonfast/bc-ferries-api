@@ -369,6 +369,17 @@ func TestParseSeasonalScheduleSailingsForDate_UsesWeekdayAndDateExceptions(t *te
 	}
 }
 
+func TestSouthernGulfOriginsUseOnlyPublishedPhysicalDestinations(t *testing.T) {
+	swartzBay := strings.Join(southernGulfTerminalCodesByOrigin["SWB"], ",")
+	if swartzBay != "PSB,PVB,POB,PST" {
+		t.Fatalf("unexpected Swartz Bay destinations: %s", swartzBay)
+	}
+	tsawwassen := strings.Join(southernGulfTerminalCodesByOrigin["TSA"], ",")
+	if tsawwassen != "PSB,PVB,POB,PST,PLH" {
+		t.Fatalf("unexpected Tsawwassen destinations: %s", tsawwassen)
+	}
+}
+
 func TestBuildOfficialSGIRoute_OrdersAndTimesPhysicalCalls(t *testing.T) {
 	serviceDate := time.Date(2026, time.August, 3, 12, 0, 0, 0, vancouverLocation)
 	observedAt := time.Date(2026, time.August, 3, 16, 0, 0, 0, time.UTC)
