@@ -110,6 +110,7 @@ func parseSeasonalScheduleSailingsForDate(
 	}
 
 	var dayBody *goquery.Selection
+	matchedDayHeader := false
 	scheduleTable.Find("thead").EachWithBreak(func(_ int, header *goquery.Selection) bool {
 		day := normalizedWeekday(header.Find("tr").First().AttrOr("data-schedule-day", ""))
 		if day == "" {
@@ -118,6 +119,7 @@ func parseSeasonalScheduleSailingsForDate(
 		if day != wantedDay && !strings.Contains(day, wantedDay) {
 			return true
 		}
+		matchedDayHeader = true
 
 		body := header.Next()
 		for body.Length() > 0 && goquery.NodeName(body) != "tbody" {
@@ -129,6 +131,12 @@ func parseSeasonalScheduleSailingsForDate(
 		}
 		return true
 	})
+	if !matchedDayHeader {
+		// Seasonal pages omit weekday sections when there is no direct service.
+		// The table itself and its other day headers prove this is a published
+		// no-service day rather than an unrecognized response.
+		return []models.NonCapacitySailing{}, "", true
+	}
 	if dayBody == nil || dayBody.Length() == 0 {
 		return nil, "", false
 	}
@@ -136,6 +144,8 @@ func parseSeasonalScheduleSailingsForDate(
 	var sailings []models.NonCapacitySailing
 	duration := ""
 	seen := make(map[string]struct{})
+	candidateRows := 0
+	malformedCandidate := false
 	dayBody.Find("tr.schedule-table-row").Each(func(_ int, row *goquery.Selection) {
 		cells := row.Find("td")
 		if cells.Length() < 3 {
@@ -158,10 +168,12 @@ func parseSeasonalScheduleSailingsForDate(
 			!seasonalRowApplies(rowText, serviceDate) {
 			return
 		}
+		candidateRows++
 
 		departure := seasonalClockPattern.FindString(rowText)
 		arrival := seasonalClockPattern.FindString(normalizedText(cells.Eq(2).Text()))
 		if departure == "" || arrival == "" {
+			malformedCandidate = true
 			return
 		}
 		departure = strings.ToLower(normalizedText(departure))
@@ -189,7 +201,10 @@ func parseSeasonalScheduleSailingsForDate(
 		}
 	})
 
-	return sailings, duration, len(sailings) > 0 && duration != ""
+	if candidateRows == 0 {
+		return []models.NonCapacitySailing{}, "", true
+	}
+	return sailings, duration, !malformedCandidate && len(sailings) > 0 && duration != ""
 }
 
 func parseSeasonalOfficialScheduleRoute(

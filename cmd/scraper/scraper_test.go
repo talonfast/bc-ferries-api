@@ -371,6 +371,46 @@ func TestParseSeasonalScheduleSailingsForDate_UsesWeekdayAndDateExceptions(t *te
 	}
 }
 
+func TestParseSeasonalScheduleSailingsForDate_AcceptsPublishedNoServiceDay(t *testing.T) {
+	fixture := `
+	<table class="table table-seasonal-schedule">
+	<thead><tr data-schedule-day="Sundays"><th></th><th>Depart</th><th>Arrive</th><th>Duration</th></tr></thead>
+	<tbody><tr class="schedule-table-row"><td></td><td>12:30 pm</td><td>1:35 pm</td><td>1h 5m</td></tr></tbody>
+	</table>`
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sailings, duration, ok := parseSeasonalScheduleSailingsForDate(
+		document,
+		time.Date(2026, time.August, 10, 12, 0, 0, 0, vancouverLocation),
+	)
+	if !ok || len(sailings) != 0 || duration != "" {
+		t.Fatalf("expected a valid published no-service day, got ok=%v duration=%q sailings=%#v", ok, duration, sailings)
+	}
+}
+
+func TestParseSeasonalScheduleSailingsForDate_RejectsMalformedApplicableRow(t *testing.T) {
+	fixture := `
+	<table class="table table-seasonal-schedule">
+	<thead><tr data-schedule-day="Mondays"><th></th><th>Depart</th><th>Arrive</th><th>Duration</th></tr></thead>
+	<tbody><tr class="schedule-table-row"><td></td><td>12:30 pm</td><td>Unavailable</td><td>1h 5m</td></tr></tbody>
+	</table>`
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, ok := parseSeasonalScheduleSailingsForDate(
+		document,
+		time.Date(2026, time.August, 10, 12, 0, 0, 0, vancouverLocation),
+	)
+	if ok {
+		t.Fatal("expected an applicable row with no arrival time to fail closed")
+	}
+}
+
 func TestSouthernGulfOriginsUseOnlyPublishedPhysicalDestinations(t *testing.T) {
 	swartzBay := strings.Join(southernGulfTerminalCodesByOrigin["SWB"], ",")
 	if swartzBay != "PSB,PVB,POB,PST,PLH" {
