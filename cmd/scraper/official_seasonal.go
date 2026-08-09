@@ -40,10 +40,10 @@ var seasonalMonths = map[string]time.Month{
 }
 
 var southernGulfTerminalCodesByOrigin = map[string][]string{
-	// Swartz Bay has no Long Harbour service; Salt Spring traffic from Victoria
-	// uses the separate Fulford Harbour route. Requiring the non-existent page
-	// made the otherwise complete official SWB itinerary fail closed.
-	"SWB": {"PSB", "PVB", "POB", "PST"},
+	// Current conditions can publish direct Long Harbour calls from both
+	// origins. Exact itinerary matching below prevents a physical destination
+	// from being attached merely because its page shares a departure time.
+	"SWB": {"PSB", "PVB", "POB", "PST", "PLH"},
 	"TSA": {"PSB", "PVB", "POB", "PST", "PLH"},
 }
 

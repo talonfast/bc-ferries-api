@@ -373,7 +373,7 @@ func TestParseSeasonalScheduleSailingsForDate_UsesWeekdayAndDateExceptions(t *te
 
 func TestSouthernGulfOriginsUseOnlyPublishedPhysicalDestinations(t *testing.T) {
 	swartzBay := strings.Join(southernGulfTerminalCodesByOrigin["SWB"], ",")
-	if swartzBay != "PSB,PVB,POB,PST" {
+	if swartzBay != "PSB,PVB,POB,PST,PLH" {
 		t.Fatalf("unexpected Swartz Bay destinations: %s", swartzBay)
 	}
 	tsawwassen := strings.Join(southernGulfTerminalCodesByOrigin["TSA"], ",")
