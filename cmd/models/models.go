@@ -73,6 +73,9 @@ type PortCall struct {
 	Role                 string `json:"role"`
 	ScheduledArrivalAt   string `json:"scheduledArrivalAt,omitempty"`
 	ScheduledDepartureAt string `json:"scheduledDepartureAt,omitempty"`
+	ScheduleSource       string `json:"scheduleSource,omitempty"`
+	ScheduleSourceURL    string `json:"scheduleSourceUrl,omitempty"`
+	ScheduleScrapedAt    string `json:"scheduleScrapedAt,omitempty"`
 }
 
 // OfficialScheduleRoute is the independently persisted timetable baseline
@@ -96,6 +99,7 @@ type OfficialScheduleSailing struct {
 	ScheduledArrivalTime   string `json:"scheduledArrivalTime"`
 	ScheduledDepartureAt   string `json:"scheduledDepartureAt"`
 	ScheduledArrivalAt     string `json:"scheduledArrivalAt"`
+	PortCalls              []PortCall `json:"portCalls,omitempty"`
 }
 
 type NonCapacityResponse struct {

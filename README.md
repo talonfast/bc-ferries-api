@@ -103,7 +103,7 @@ Capacity sailings expose explicit time fields so consumers do not have to infer 
 | `operationalSource` | Operator source used for status, actual times, vessel, and capacity observations. |
 | `itineraryRaw` | Normalized operator text describing Southern Gulf Islands calls, retained for audit and fallback. |
 | `itinerarySource` / `itineraryObservedAt` | Source and observation time for the published stopping pattern. |
-| `portCalls` | Ordered physical terminal calls. Each call has a deterministic ID, terminal code, sequence, and role; call times are included when known. |
+| `portCalls` | Ordered physical terminal calls. Each call has a deterministic ID, terminal code, sequence, and role; official call times include their own source URL and scrape timestamp. |
 
 The legacy `time` and `arrivalTime` fields remain for compatibility. Their meaning varies with `sailingStatus`, so new consumers should use the explicit fields above.
 
@@ -112,12 +112,12 @@ documented in [Trusted sailing data model](docs/TRUSTED_SAILINGS.md).
 
 `GET /healthcheck/` is a liveness probe for the process and database. `GET
 /readycheck/` additionally requires all 12 capacity directions, operational
-observations no older than three minutes, and the nine fixed-arrival daily
-schedule directions for today and tomorrow no older than six hours. Southern
-Gulf Islands variable-arrival rows and the Horseshoe Bay-Bowen Island seasonal
-page remain explicit current-conditions fallbacks. An upstream outage therefore
-makes the service unready without restarting it or discarding its
-last-known-good generation.
+observations no older than fifteen minutes, and a fresh official schedule
+generation for today and tomorrow. Nine directions come from daily pages;
+Horseshoe Bay-Bowen Island and the two Southern Gulf Islands route groups use
+seasonal pages. Individual sailings that cannot be reconciled remain explicit
+current-conditions fallbacks. An upstream outage therefore makes the service
+unready without restarting it or discarding its last-known-good generation.
 
 #### Capacity Route Codes:
 

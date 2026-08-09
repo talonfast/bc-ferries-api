@@ -24,8 +24,9 @@ and introduced through a new identity version after a migration period.
 
 ## Source precedence
 
-1. **Published baseline:** the BC Ferries daily schedule supplies service date,
-   scheduled departure, scheduled arrival, and duration.
+1. **Published baseline:** BC Ferries daily and seasonal schedule pages supply
+   service date, scheduled departure, scheduled arrival, duration, and—where
+   published—timed physical port calls.
 2. **Operational overlay:** BC Ferries current conditions supplies cancellation,
    actual departure, ETA, actual arrival, vessel, and capacity.
 3. **AIS observation:** position, speed, heading, and observed timestamp may
@@ -48,6 +49,14 @@ Sequence zero is the physical origin; later calls use stable BC Ferries terminal
 codes and distinguish intermediate `stop` calls from an explicitly published
 `destination`.
 
+The grouped `SWB-SGI` and `TSA-SGI` baselines are assembled from BC Ferries'
+individual seasonal route pages. Sailings are joined only by their published
+origin departure instant; destination-page arrival instants establish the call
+order. Each timed call retains its exact source URL and scrape timestamp. An
+official sequence is merged with current conditions only when every physical
+terminal code agrees in order. A mismatch remains an explicit operational
+fallback rather than mixing two different itineraries.
+
 Port call identity is derived from the canonical sailing rather than from live
 vessel data:
 
@@ -69,13 +78,14 @@ through these calls, but it must not invent, remove, or reorder them.
   health checks can detect stale data instead of treating it as fresh.
 - Today and tomorrow are refreshed every four hours. Current conditions remain
   a one-minute operational feed.
-- Nine capacity directions currently have a complete fixed-arrival daily-page
-  baseline. Southern Gulf Islands variable-arrival rows and Horseshoe Bay-Bowen
-  Island's seasonal redirect are retained from the official current-conditions
-  page with explicit fallback provenance until their schedule adapters are
-  implemented.
+- Nine fixed-arrival capacity directions use the daily adapter. Horseshoe
+  Bay-Bowen Island uses its seasonal page. Both Southern Gulf Islands route
+  groups are built from the operator's physical-terminal seasonal pages. A
+  sailing absent from, or inconsistent across, those sources remains an
+  explicit current-conditions fallback.
 
-The official source surfaces are the [daily schedule](https://www.bcferries.com/routes-fares/schedules/daily/TSA-SWB)
+The official source surfaces are the [daily schedule](https://www.bcferries.com/routes-fares/schedules/daily/TSA-SWB),
+[seasonal schedule](https://www.bcferries.com/routes-fares/schedules/seasonal/SWB-PST),
 and [current conditions](https://www.bcferries.com/current-conditions/TSA-SWB)
 pages. Scraping is an adapter around those operator-published pages, not a claim
 that their HTML is a stable public API.

@@ -679,6 +679,12 @@ func ScrapeOfficialCapacitySchedules() {
 		requestedDate := serviceDate.AddDate(0, 0, dayOffset)
 		for i, departure := range departures {
 			for _, destination := range destinations[i] {
+				// These routes publish their authoritative baseline in seasonal
+				// tables. The daily endpoints either redirect or omit their
+				// physical island calls, so a separate adapter handles them below.
+				if destination == "SGI" || (departure == "HSB" && destination == "BOW") {
+					continue
+				}
 				sourceURL := MakeScheduleLinkForDate(departure, destination, requestedDate)
 				// Isolate each navigation in a child tab. Cancelling a timeout on
 				// the shared browser context terminates every later route in the
@@ -721,6 +727,8 @@ func ScrapeOfficialCapacitySchedules() {
 			}
 		}
 	}
+
+	scrapeOfficialSeasonalCapacitySchedules(ctx, serviceDate, now)
 }
 
 func parseOfficialScheduleRoute(

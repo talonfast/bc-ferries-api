@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/samuel-pratt/bc-ferries-api/cmd/models"
@@ -203,6 +204,13 @@ func mergeCapacityRoutes(
 
 		for _, official := range officialRoute.Sailings {
 			merged, hasOperational := operationalByID[official.SailingID]
+			if hasOperational && len(official.PortCalls) > 0 && len(merged.PortCalls) > 0 &&
+				!samePortCallSequence(official.PortCalls, merged.PortCalls) {
+				// Never attach official times to a different observed itinerary.
+				// Leaving this sailing unmatched retains the current-conditions
+				// record below with explicit fallback provenance.
+				continue
+			}
 			if hasOperational {
 				matchedOperational[official.SailingID] = struct{}{}
 			} else {
@@ -224,9 +232,12 @@ func mergeCapacityRoutes(
 			merged.ScheduledArrivalTime = official.ScheduledArrivalTime
 			merged.ScheduledDepartureAt = official.ScheduledDepartureAt
 			merged.ScheduledArrivalAt = official.ScheduledArrivalAt
-			merged.ScheduleSource = "bc-ferries-daily-schedule"
+			merged.ScheduleSource = officialScheduleSource(officialRoute, official)
 			merged.ScheduleSourceURL = officialRoute.SourceURL
 			merged.ScheduleScrapedAt = officialRoute.ScrapedAt
+			if len(official.PortCalls) > 0 {
+				merged.PortCalls = official.PortCalls
+			}
 			route.Sailings = append(route.Sailings, merged)
 		}
 	}
@@ -267,6 +278,34 @@ func mergeCapacityRoutes(
 	}
 	sort.Slice(routes, func(i, j int) bool { return routes[i].RouteCode < routes[j].RouteCode })
 	return routes
+}
+
+func officialScheduleSource(
+	route models.OfficialScheduleRoute,
+	sailing models.OfficialScheduleSailing,
+) string {
+	if len(sailing.PortCalls) > 0 {
+		return "bc-ferries-seasonal-route-schedules"
+	}
+	if strings.Contains(route.SourceURL, "/seasonal/") {
+		return "bc-ferries-seasonal-schedule"
+	}
+	return "bc-ferries-daily-schedule"
+}
+
+func samePortCallSequence(left, right []models.PortCall) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if !strings.EqualFold(
+			strings.TrimSpace(left[index].TerminalCode),
+			strings.TrimSpace(right[index].TerminalCode),
+		) {
+			return false
+		}
+	}
+	return true
 }
 
 /*

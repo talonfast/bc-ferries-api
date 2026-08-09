@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+
+	"github.com/samuel-pratt/bc-ferries-api/cmd/models"
 )
 
 func TestParseCapacityRoute_PreservesScheduledAndOperationalTimes(t *testing.T) {
@@ -334,6 +336,81 @@ func TestParseOfficialScheduleRoute_RejectsWrongDateOrPartialPage(t *testing.T) 
 	)
 	if ok {
 		t.Fatal("expected a response for the wrong service date to be rejected")
+	}
+}
+
+func TestParseSeasonalScheduleSailingsForDate_UsesWeekdayAndDateExceptions(t *testing.T) {
+	fixture := `
+	<table class="table table-seasonal-schedule">
+	<thead><tr data-schedule-day="Mondays"><th></th><th>Depart</th><th>Arrive</th><th>Duration</th></tr></thead>
+	<tbody>
+	<tr class="schedule-table-row"><td></td><td>5:00 am<p class="red-text">Only on Aug 3 &amp; Sep 7</p></td><td>6:08 am</td><td>1h 8m</td></tr>
+	<tr class="schedule-table-row"><td></td><td>6:00 am<p class="red-text">Except on Aug 3 &amp; Sep 7</p></td><td>7:08 am</td><td>1h 8m</td></tr>
+	<tr class="schedule-table-row"><td></td><td>7:00 am</td><td>8:08 am</td><td>1h 8m</td></tr>
+	</tbody>
+	<thead><tr data-schedule-day="Tuesdays"><th></th><th>Depart</th><th>Arrive</th><th>Duration</th></tr></thead>
+	<tbody><tr class="schedule-table-row"><td></td><td>9:00 am</td><td>10:08 am</td><td>1h 8m</td></tr></tbody>
+	</table>`
+	document, err := goquery.NewDocumentFromReader(strings.NewReader(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sailings, duration, ok := parseSeasonalScheduleSailingsForDate(
+		document,
+		time.Date(2026, time.August, 3, 12, 0, 0, 0, vancouverLocation),
+	)
+	if !ok || duration != "1h 8m" {
+		t.Fatalf("expected a complete Monday schedule, got ok=%v duration=%q", ok, duration)
+	}
+	if len(sailings) != 2 || sailings[0].DepartureTime != "5:00 am" ||
+		sailings[1].DepartureTime != "7:00 am" {
+		t.Fatalf("weekday/date filtering was not exact: %#v", sailings)
+	}
+}
+
+func TestBuildOfficialSGIRoute_OrdersAndTimesPhysicalCalls(t *testing.T) {
+	serviceDate := time.Date(2026, time.August, 3, 12, 0, 0, 0, vancouverLocation)
+	observedAt := time.Date(2026, time.August, 3, 16, 0, 0, 0, time.UTC)
+	physicalRoutes := map[string]models.OfficialScheduleRoute{
+		"PVB": {
+			ServiceDate: "2026-08-03", SourceURL: "https://www.bcferries.com/routes-fares/schedules/seasonal/SWB-PVB",
+			ScrapedAt: observedAt.Format(time.RFC3339),
+			Sailings: []models.OfficialScheduleSailing{{
+				ScheduledDepartureAt: "2026-08-03T05:55:00-07:00",
+				ScheduledArrivalAt:   "2026-08-03T07:55:00-07:00",
+			}},
+		},
+		"PST": {
+			ServiceDate: "2026-08-03", SourceURL: "https://www.bcferries.com/routes-fares/schedules/seasonal/SWB-PST",
+			ScrapedAt: observedAt.Format(time.RFC3339),
+			Sailings: []models.OfficialScheduleSailing{{
+				ScheduledDepartureAt: "2026-08-03T05:55:00-07:00",
+				ScheduledArrivalAt:   "2026-08-03T07:05:00-07:00",
+			}},
+		},
+	}
+
+	route, ok := buildOfficialSGIRoute("SWB", serviceDate, physicalRoutes, observedAt)
+	if !ok || len(route.Sailings) != 1 {
+		t.Fatalf("expected one grouped sailing, got ok=%v route=%#v", ok, route)
+	}
+	sailing := route.Sailings[0]
+	wantCodes := []string{"SWB", "PST", "PVB"}
+	if len(sailing.PortCalls) != len(wantCodes) {
+		t.Fatalf("unexpected calls: %#v", sailing.PortCalls)
+	}
+	for index, code := range wantCodes {
+		if sailing.PortCalls[index].TerminalCode != code || sailing.PortCalls[index].Sequence != index {
+			t.Fatalf("unexpected call %d: %#v", index, sailing.PortCalls[index])
+		}
+	}
+	if sailing.ScheduledArrivalAt != "2026-08-03T07:55:00-07:00" ||
+		sailing.PortCalls[1].ScheduledArrivalAt != "2026-08-03T07:05:00-07:00" {
+		t.Fatalf("published call times were lost: %#v", sailing)
+	}
+	if sailing.PortCalls[1].ScheduleSource != "bc-ferries-seasonal-route-schedules" {
+		t.Fatalf("call provenance was lost: %#v", sailing.PortCalls[1])
 	}
 }
 

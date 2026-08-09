@@ -84,6 +84,17 @@
                         "scheduledDepartureAt": {
                           "type": "string",
                           "format": "date-time"
+                        },
+                        "scheduleSource": {
+                          "type": "string"
+                        },
+                        "scheduleSourceUrl": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "scheduleScrapedAt": {
+                          "type": "string",
+                          "format": "date-time"
                         }
                       },
                       "required": [
