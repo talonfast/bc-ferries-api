@@ -2,7 +2,7 @@ package staticdata
 
 const (
 	ExpectedCapacityRouteCount      = 12
-	ExpectedDailyScheduleRouteCount = 9
+	ExpectedDailyScheduleRouteCount = 12
 )
 
 /*

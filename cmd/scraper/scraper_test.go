@@ -347,6 +347,8 @@ func TestParseSeasonalScheduleSailingsForDate_UsesWeekdayAndDateExceptions(t *te
 	<tr class="schedule-table-row"><td></td><td>5:00 am<p class="red-text">Only on Aug 3 &amp; Sep 7</p></td><td>6:08 am</td><td>1h 8m</td></tr>
 	<tr class="schedule-table-row"><td></td><td>6:00 am<p class="red-text">Except on Aug 3 &amp; Sep 7</p></td><td>7:08 am</td><td>1h 8m</td></tr>
 	<tr class="schedule-table-row"><td></td><td>7:00 am</td><td>8:08 am</td><td>1h 8m</td></tr>
+	<tr class="schedule-table-row"><td>Thru fare via Swartz Bay</td><td>8:00 am</td><td>10:08 am</td><td>2h 8m</td></tr>
+	<tr class="schedule-table-row"><td></td><td>8:30 am</td><td>10:38 am</td><td>2h 8m Transfer at Village Bay</td></tr>
 	</tbody>
 	<thead><tr data-schedule-day="Tuesdays"><th></th><th>Depart</th><th>Arrive</th><th>Duration</th></tr></thead>
 	<tbody><tr class="schedule-table-row"><td></td><td>9:00 am</td><td>10:08 am</td><td>1h 8m</td></tr></tbody>
@@ -365,7 +367,7 @@ func TestParseSeasonalScheduleSailingsForDate_UsesWeekdayAndDateExceptions(t *te
 	}
 	if len(sailings) != 2 || sailings[0].DepartureTime != "5:00 am" ||
 		sailings[1].DepartureTime != "7:00 am" {
-		t.Fatalf("weekday/date filtering was not exact: %#v", sailings)
+		t.Fatalf("weekday/date/connection filtering was not exact: %#v", sailings)
 	}
 }
 

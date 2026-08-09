@@ -141,6 +141,15 @@ func parseSeasonalScheduleSailingsForDate(
 		if cells.Length() < 3 {
 			return
 		}
+		// The physical-destination pages also advertise connecting journeys.
+		// Those rows do not describe a same-vessel port call and must never be
+		// folded into the canonical itinerary for an operational SGI sailing.
+		fullRowText := strings.ToLower(normalizedText(row.Text()))
+		if strings.Contains(fullRowText, "thru fare") ||
+			strings.Contains(fullRowText, "through fare") ||
+			strings.Contains(fullRowText, "transfer") {
+			return
+		}
 		departureCell := cells.Eq(1)
 		rowText := normalizedText(departureCell.Text())
 		rowTextLower := strings.ToLower(rowText)
