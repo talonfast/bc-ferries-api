@@ -93,12 +93,12 @@ type OfficialScheduleRoute struct {
 }
 
 type OfficialScheduleSailing struct {
-	SailingID              string `json:"sailingId"`
-	ServiceDate            string `json:"serviceDate"`
-	ScheduledDepartureTime string `json:"scheduledDepartureTime"`
-	ScheduledArrivalTime   string `json:"scheduledArrivalTime"`
-	ScheduledDepartureAt   string `json:"scheduledDepartureAt"`
-	ScheduledArrivalAt     string `json:"scheduledArrivalAt"`
+	SailingID              string     `json:"sailingId"`
+	ServiceDate            string     `json:"serviceDate"`
+	ScheduledDepartureTime string     `json:"scheduledDepartureTime"`
+	ScheduledArrivalTime   string     `json:"scheduledArrivalTime"`
+	ScheduledDepartureAt   string     `json:"scheduledDepartureAt"`
+	ScheduledArrivalAt     string     `json:"scheduledArrivalAt"`
 	PortCalls              []PortCall `json:"portCalls,omitempty"`
 }
 

@@ -16,7 +16,7 @@ import (
 	"github.com/samuel-pratt/bc-ferries-api/cmd/models"
 )
 
-var seasonalClockPattern = regexp.MustCompile(`(?i)\b\d{1,2}:\d{2}\s*[ap]m\b`)
+var seasonalClockPattern = regexp.MustCompile(`(?i)\b\d{1,2}:\d{2}\s*[ap]m`)
 
 var seasonalDateTokenPattern = regexp.MustCompile(
 	`(?i)(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|` +
@@ -461,7 +461,7 @@ func scrapeOfficialSeasonalCapacitySchedules(
 		complete := true
 		for _, destination := range southernGulfTerminalCodes {
 			sourceURL := MakeSeasonalScheduleLink(origin, destination)
-			 document, err := fetchOfficialScheduleDocument(ctx, sourceURL)
+			document, err := fetchOfficialScheduleDocument(ctx, sourceURL)
 			if err != nil {
 				log.Printf("scrapeOfficialSeasonalCapacitySchedules: fetch failed for %s: %v", sourceURL, err)
 				complete = false
