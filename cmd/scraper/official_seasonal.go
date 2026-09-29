@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/chromedp/chromedp"
 
 	"github.com/samuel-pratt/bc-ferries-api/cmd/models"
 )
@@ -461,12 +460,7 @@ func fetchOfficialScheduleDocument(
 	parent context.Context,
 	sourceURL string,
 ) (*goquery.Document, error) {
-	pageContext, pageCancel := chromedp.NewContext(parent)
-	defer pageCancel()
-	requestContext, requestCancel := context.WithTimeout(pageContext, 45*time.Second)
-	defer requestCancel()
-
-	html, _, err := fetchWithChromedp(requestContext, sourceURL)
+	html, _, err := fetchPage(parent, sourceURL)
 	if err != nil {
 		return nil, err
 	}
