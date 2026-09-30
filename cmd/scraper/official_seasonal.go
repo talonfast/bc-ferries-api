@@ -90,6 +90,13 @@ func seasonalRowApplies(note string, serviceDate time.Time) bool {
 	return true
 }
 
+// seasonalRow is one applicable timetable row and the intermediate stops it
+// names, in published order. Stops carry no times on the operator's pages.
+type seasonalRow struct {
+	sailing models.NonCapacitySailing
+	stops   []string
+}
+
 // parseSeasonalScheduleSailingsForDate reads the operator's onward seasonal
 // table for one Vancouver service date. The table carries weekday sections and
 // row-level date exceptions; both are required before a sailing is accepted.
@@ -97,8 +104,29 @@ func parseSeasonalScheduleSailingsForDate(
 	document *goquery.Document,
 	serviceDate time.Time,
 ) ([]models.NonCapacitySailing, string, bool) {
+	rows, duration, ok := parseSeasonalRowsForDate(document, serviceDate)
+	if rows == nil {
+		return nil, duration, ok
+	}
+	sailings := make([]models.NonCapacitySailing, 0, len(rows))
+	for _, row := range rows {
+		sailings = append(sailings, row.sailing)
+	}
+	return sailings, duration, ok
+}
+
+func parseSeasonalRowsForDate(
+	document *goquery.Document,
+	serviceDate time.Time,
+) ([]seasonalRow, string, bool) {
 	serviceDate = serviceDate.In(vancouverLocation)
 	wantedDay := normalizedWeekday(serviceDate.Weekday().String())
+
+	// A page showing another season is a valid page describing different
+	// dates, not this one. Hand-built pages without a selector are accepted.
+	if season, known := displayedSeason(document); known && !season.covers(serviceDate) {
+		return nil, "", false
+	}
 
 	var scheduleTable *goquery.Selection
 	document.Find("table.table-seasonal-schedule").EachWithBreak(func(_ int, table *goquery.Selection) bool {
@@ -138,13 +166,13 @@ func parseSeasonalScheduleSailingsForDate(
 		// Seasonal pages omit weekday sections when there is no direct service.
 		// The table itself and its other day headers prove this is a published
 		// no-service day rather than an unrecognized response.
-		return []models.NonCapacitySailing{}, "", true
+		return []seasonalRow{}, "", true
 	}
 	if dayBody == nil || dayBody.Length() == 0 {
 		return nil, "", false
 	}
 
-	var sailings []models.NonCapacitySailing
+	var sailings []seasonalRow
 	duration := ""
 	seen := make(map[string]struct{})
 	candidateRows := 0
@@ -188,7 +216,8 @@ func parseSeasonalScheduleSailingsForDate(
 		}
 		departure = strings.ToLower(normalizedText(departure))
 		arrival = strings.ToLower(normalizedText(arrival))
-		key := departure + "\x00" + arrival
+		stops := seasonalRowStops(row)
+		key := departure + "\x00" + arrival + "\x00" + strings.Join(stops, "\x00")
 		if _, duplicate := seen[key]; duplicate {
 			return
 		}
@@ -200,10 +229,13 @@ func parseSeasonalScheduleSailingsForDate(
 				statuses = append(statuses, value)
 			}
 		})
-		sailings = append(sailings, models.NonCapacitySailing{
-			DepartureTime: departure,
-			ArrivalTime:   arrival,
-			VesselStatus:  strings.Join(statuses, " | "),
+		sailings = append(sailings, seasonalRow{
+			sailing: models.NonCapacitySailing{
+				DepartureTime: departure,
+				ArrivalTime:   arrival,
+				VesselStatus:  strings.Join(statuses, " | "),
+			},
+			stops: stops,
 		})
 
 		if duration == "" && cells.Length() > 3 {
@@ -212,9 +244,28 @@ func parseSeasonalScheduleSailingsForDate(
 	})
 
 	if candidateRows == 0 {
-		return []models.NonCapacitySailing{}, "", true
+		return []seasonalRow{}, "", true
 	}
 	return sailings, duration, !malformedCandidate && len(sailings) > 0 && duration != ""
+}
+
+// seasonalRowStops reads the stop-details column: each stop is a paragraph
+// holding a "Stop" marker and a sibling "at <terminal>" span.
+func seasonalRowStops(row *goquery.Selection) []string {
+	var stops []string
+	row.Find("td.schedule-stop-details-first-word p").Each(func(_ int, paragraph *goquery.Selection) {
+		if paragraph.Find(".schedule-leg-type-stop").Length() == 0 {
+			return
+		}
+		name := normalizedText(paragraph.ChildrenFiltered("span").Last().Text())
+		if len(name) > 3 && strings.EqualFold(name[:3], "at ") {
+			name = strings.TrimSpace(name[3:])
+		}
+		if name != "" {
+			stops = append(stops, name)
+		}
+	})
+	return stops
 }
 
 func parseSeasonalOfficialScheduleRoute(
@@ -477,22 +528,24 @@ func scrapeOfficialSeasonalCapacitySchedules(
 	observedAt time.Time,
 ) {
 	serviceDates := []time.Time{serviceDate, serviceDate.AddDate(0, 0, 1)}
+	pages := newSeasonalPages(ctx)
 
 	// Horseshoe Bay-Bowen Island is a fixed-arrival capacity route whose daily
 	// URL redirects to the official seasonal table.
 	bowenURL := MakeSeasonalScheduleLink("HSB", "BOW")
-	if document, err := fetchOfficialScheduleDocument(ctx, bowenURL); err == nil {
-		for _, date := range serviceDates {
-			if route, ok := parseSeasonalOfficialScheduleRoute(
-				document, "HSB", "BOW", date, bowenURL, observedAt,
-			); ok {
-				if err := persistOfficialScheduleRoute(route); err != nil {
-					log.Printf("scrapeOfficialSeasonalCapacitySchedules: persist failed for %s on %s: %v", route.RouteCode, route.ServiceDate, err)
-				}
+	for _, date := range serviceDates {
+		document, sourceURL, err := pages.forDate(bowenURL, date)
+		if err != nil {
+			log.Printf("scrapeOfficialSeasonalCapacitySchedules: fetch failed for %s: %v", bowenURL, err)
+			continue
+		}
+		if route, ok := parseSeasonalOfficialScheduleRoute(
+			document, "HSB", "BOW", date, sourceURL, observedAt,
+		); ok {
+			if err := persistOfficialScheduleRoute(route); err != nil {
+				log.Printf("scrapeOfficialSeasonalCapacitySchedules: persist failed for %s on %s: %v", route.RouteCode, route.ServiceDate, err)
 			}
 		}
-	} else {
-		log.Printf("scrapeOfficialSeasonalCapacitySchedules: fetch failed for %s: %v", bowenURL, err)
 	}
 
 	for _, origin := range []string{"SWB", "TSA"} {
@@ -500,14 +553,14 @@ func scrapeOfficialSeasonalCapacitySchedules(
 		physicalByDate := make(map[string]map[string]models.OfficialScheduleRoute)
 		complete := true
 		for _, destination := range destinations {
-			sourceURL := MakeSeasonalScheduleLink(origin, destination)
-			document, err := fetchOfficialScheduleDocument(ctx, sourceURL)
-			if err != nil {
-				log.Printf("scrapeOfficialSeasonalCapacitySchedules: fetch failed for %s: %v", sourceURL, err)
-				complete = false
-				break
-			}
+			baseURL := MakeSeasonalScheduleLink(origin, destination)
 			for _, date := range serviceDates {
+				document, sourceURL, err := pages.forDate(baseURL, date)
+				if err != nil {
+					log.Printf("scrapeOfficialSeasonalCapacitySchedules: fetch failed for %s: %v", baseURL, err)
+					complete = false
+					break
+				}
 				route, ok := parseSeasonalOfficialScheduleRoute(
 					document, origin, destination, date, sourceURL, observedAt,
 				)

@@ -125,6 +125,16 @@ func GetNonCapacitySailings(w http.ResponseWriter, r *http.Request, ps httproute
 
 }
 
+// GetNorthernSailings returns today's and tomorrow's northern timetables in
+// the same shape as /v2/capacity/, with ordered port calls per sailing.
+func GetNorthernSailings(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	jsonString, _ := json.Marshal(CapacityResponse{Routes: db.GetNorthernSailings()})
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(jsonString)
+}
+
 /**************/
 /* V1 Structs */
 /**************/
