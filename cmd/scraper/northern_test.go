@@ -99,6 +99,15 @@ func TestNorthern_RejectsADateOutsideTheDisplayedSeason(t *testing.T) {
 	}
 }
 
+// Haida Gwaii links its seasons with a route-coded parameter instead.
+func TestNorthern_FollowsRouteCodedSeasonLinks(t *testing.T) {
+	url, found := seasonURLForDate(northernFixture(t, "PPR-PSK"), vancouverDate(t, "2026-10-01"))
+	want := "https://www.bcferries.com/routes-fares/schedules/seasonal/PPR-PSK?departureDateCode=R11_20261001_20270203"
+	if !found || url != want {
+		t.Fatalf("season URL %q found=%v, want %q", url, found, want)
+	}
+}
+
 func TestNorthern_HaidaGwaiiHonoursDateExceptions(t *testing.T) {
 	// "10:30 am Except on Jun 3, 10, Sep 16, 23 & 30" is the only Wednesday row.
 	route, ok := parseNorthernFixture(t, "PPR-PSK", "PPR", "PSK", "2026-09-30")

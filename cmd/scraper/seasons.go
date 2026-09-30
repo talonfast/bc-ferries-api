@@ -11,8 +11,8 @@ import (
 )
 
 // Seasonal timetable pages show one season at a time, by default the one in
-// force today, and link to the others with ?departureDate=YYYYMMDD-YYYYMMDD.
-// Scraping tomorrow from today's default page silently applies the ending
+// force today, and link to the others with ?departureDate=YYYYMMDD-YYYYMMDD
+// or, on some routes, ?departureDateCode=R11_YYYYMMDD_YYYYMMDD. Scraping tomorrow from today's default page silently applies the ending
 // season's timetable across a season boundary, so every seasonal parse checks
 // the season on the page and every fetch follows the link that covers the
 // requested service date.
@@ -21,7 +21,9 @@ var displayedSeasonPattern = regexp.MustCompile(
 	`([A-Z][a-z]{2}) (\d{1,2}), (\d{4}) - ([A-Z][a-z]{2}) (\d{1,2}), (\d{4})`,
 )
 
-var seasonLinkPattern = regexp.MustCompile(`departureDate=(\d{8})-(\d{8})`)
+var seasonLinkPattern = regexp.MustCompile(
+	`departureDate(?:Code)?=(?:[A-Za-z0-9]+_)?(\d{8})[-_](\d{8})`,
+)
 
 // seasonRange is an inclusive range of Vancouver service dates, held as UTC
 // midnights so comparisons never depend on an offset.
@@ -59,7 +61,7 @@ func displayedSeason(document *goquery.Document) (seasonRange, bool) {
 // seasonURLForDate finds the page's own link to the season covering a date.
 func seasonURLForDate(document *goquery.Document, serviceDate time.Time) (string, bool) {
 	var found string
-	document.Find(`a[href*="departureDate="]`).EachWithBreak(func(_ int, link *goquery.Selection) bool {
+	document.Find(`a[href*="departureDate"]`).EachWithBreak(func(_ int, link *goquery.Selection) bool {
 		href := strings.TrimSpace(link.AttrOr("href", ""))
 		match := seasonLinkPattern.FindStringSubmatch(href)
 		if match == nil {
