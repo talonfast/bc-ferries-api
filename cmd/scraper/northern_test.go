@@ -99,6 +99,26 @@ func TestNorthern_RejectsADateOutsideTheDisplayedSeason(t *testing.T) {
 	}
 }
 
+// Captured 30 September 2026, the last day of the season: no Tuesday is left,
+// so the page has no onward timetable, only the return one (Wednesday via
+// Klemtu). Reading that as Port Hardy to Prince Rupert put the same ship on
+// both directions at 7:30 am.
+func TestNorthern_ReturnTimetableIsNeverReadAsOnward(t *testing.T) {
+	route, ok := parseNorthernFixture(t, "PPH-PPR_return_only", "PPH", "PPR", "2026-09-30")
+	if !ok || len(route.Sailings) != 0 {
+		t.Fatalf("ok=%v sailings=%d, want no onward sailings", ok, len(route.Sailings))
+	}
+}
+
+// Haida Gwaii links its seasons with a route-coded parameter instead.
+func TestNorthern_FollowsRouteCodedSeasonLinks(t *testing.T) {
+	url, found := seasonURLForDate(northernFixture(t, "PPR-PSK"), vancouverDate(t, "2026-10-01"))
+	want := "https://www.bcferries.com/routes-fares/schedules/seasonal/PPR-PSK?departureDateCode=R11_20261001_20270203"
+	if !found || url != want {
+		t.Fatalf("season URL %q found=%v, want %q", url, found, want)
+	}
+}
+
 func TestNorthern_HaidaGwaiiHonoursDateExceptions(t *testing.T) {
 	// "10:30 am Except on Jun 3, 10, Sep 16, 23 & 30" is the only Wednesday row.
 	route, ok := parseNorthernFixture(t, "PPR-PSK", "PPR", "PSK", "2026-09-30")
