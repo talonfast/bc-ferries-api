@@ -28,3 +28,17 @@ CREATE TABLE official_schedule_routes (
 
 CREATE INDEX official_schedule_routes_service_date_idx
     ON official_schedule_routes (service_date);
+
+-- Northern seasonal timetables, kept apart from official_schedule_routes so
+-- they never enter the capacity merge or its readiness counts.
+CREATE TABLE northern_schedule_routes (
+    route_code VARCHAR(6) NOT NULL,
+    service_date DATE NOT NULL,
+    from_terminal_code VARCHAR(3) NOT NULL,
+    to_terminal_code VARCHAR(3) NOT NULL,
+    sailing_duration VARCHAR(7) NOT NULL,
+    sailings JSONB NOT NULL,
+    source_url TEXT NOT NULL,
+    scraped_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (route_code, service_date)
+);
