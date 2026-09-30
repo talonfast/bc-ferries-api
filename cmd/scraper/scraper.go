@@ -667,7 +667,7 @@ func parseCapacityRoute(
 // daily timetables for capacity routes. A failed or redirected scrape never
 // deletes the last known-good baseline.
 func ScrapeOfficialCapacitySchedules() {
-	ctx, cancel := newBrowserContext(context.Background())
+	ctx, cancel := newBrowserContext(context.Background(), officialScrapeDeadline)
 	defer cancel()
 
 	departures := staticdata.GetCapacityDepartureTerminals()
@@ -686,14 +686,7 @@ func ScrapeOfficialCapacitySchedules() {
 					continue
 				}
 				sourceURL := MakeScheduleLinkForDate(departure, destination, requestedDate)
-				// Isolate each navigation in a child tab. Cancelling a timeout on
-				// the shared browser context terminates every later route in the
-				// generation.
-				pageCtx, pageCancel := chromedp.NewContext(ctx)
-				requestCtx, requestCancel := context.WithTimeout(pageCtx, 45*time.Second)
-				html, finalURL, err := fetchWithChromedp(requestCtx, sourceURL)
-				requestCancel()
-				pageCancel()
+				html, finalURL, err := fetchPage(ctx, sourceURL)
 				if err != nil {
 					log.Printf("ScrapeOfficialCapacitySchedules: fetch failed for %s: %v", sourceURL, err)
 					continue
@@ -883,7 +876,7 @@ func persistOfficialScheduleRoute(route models.OfficialScheduleRoute) error {
  * @return void
  */
 func ScrapeNonCapacityRoutes() {
-	ctx, cancel := newBrowserContext(context.Background())
+	ctx, cancel := newBrowserContext(context.Background(), nonCapacityScrapeDeadline)
 	defer cancel()
 
 	departureTerminals := staticdata.GetNonCapacityDepartureTerminals()
@@ -895,7 +888,7 @@ func ScrapeNonCapacityRoutes() {
 			destination := destinationTerminals[i][j]
 
 			dailyLink := MakeScheduleLink(departure, destination)
-			html, finalURL, err := fetchWithChromedp(ctx, dailyLink)
+			html, finalURL, err := fetchPage(ctx, dailyLink)
 			if err == nil {
 				document, parseErr := goquery.NewDocumentFromReader(strings.NewReader(html))
 				if parseErr == nil {
@@ -911,7 +904,7 @@ func ScrapeNonCapacityRoutes() {
 			}
 
 			seasonalLink := MakeSeasonalScheduleLink(departure, destination)
-			html, _, err = fetchWithChromedp(ctx, seasonalLink)
+			html, _, err = fetchPage(ctx, seasonalLink)
 			if err != nil {
 				log.Printf("ScrapeNonCapacityRoutes: seasonal fetch failed for %s: %v", seasonalLink, err)
 				continue
@@ -928,7 +921,19 @@ func ScrapeNonCapacityRoutes() {
 	}
 }
 
-func newBrowserContext(parent context.Context) (context.Context, context.CancelFunc) {
+// Deadlines for a whole scrape generation. Both jobs run in gocron's singleton
+// mode, so a generation that never returns blocks every later one: a Chromium
+// hang on 31 August 2026 froze the official timetables for four weeks without
+// logging anything. Cancelling the allocator context kills the browser, so the
+// deadline also bounds a hang inside Chromium's own launch.
+const (
+	officialScrapeDeadline    = 30 * time.Minute
+	nonCapacityScrapeDeadline = 90 * time.Minute
+	pageTimeout               = 45 * time.Second
+)
+
+func newBrowserContext(parent context.Context, deadline time.Duration) (context.Context, context.CancelFunc) {
+	parent, deadlineCancel := context.WithTimeout(parent, deadline)
 	options := append([]chromedp.ExecAllocatorOption(nil), chromedp.DefaultExecAllocatorOptions[:]...)
 	if strings.EqualFold(os.Getenv("CHROME_NO_SANDBOX"), "true") {
 		// Containers already provide the process boundary. Self-hosted Compose
@@ -943,6 +948,7 @@ func newBrowserContext(parent context.Context) (context.Context, context.CancelF
 	return browserContext, func() {
 		browserCancel()
 		allocatorCancel()
+		deadlineCancel()
 	}
 }
 
@@ -1385,6 +1391,17 @@ func parseDailyScheduleSailings(document *goquery.Document) ([]models.NonCapacit
  * @return string - The full outer HTML of the rendered page
  * @return error - Any error encountered during navigation or retrieval
  */
+// fetchPage loads one URL in its own tab under its own timeout. Cancelling a
+// timeout on the shared browser context would terminate every later route in
+// the generation, and a navigation with no timeout at all can wait forever.
+func fetchPage(browser context.Context, url string) (string, string, error) {
+	pageCtx, pageCancel := chromedp.NewContext(browser)
+	defer pageCancel()
+	requestCtx, requestCancel := context.WithTimeout(pageCtx, pageTimeout)
+	defer requestCancel()
+	return fetchWithChromedp(requestCtx, url)
+}
+
 func fetchWithChromedp(ctx context.Context, url string) (string, string, error) {
 	var html string
 	var finalURL string
