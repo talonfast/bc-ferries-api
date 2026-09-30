@@ -928,6 +928,7 @@ func ScrapeNonCapacityRoutes() {
 // deadline also bounds a hang inside Chromium's own launch.
 const (
 	officialScrapeDeadline    = 30 * time.Minute
+	northernScrapeDeadline    = 15 * time.Minute
 	nonCapacityScrapeDeadline = 90 * time.Minute
 	pageTimeout               = 45 * time.Second
 )

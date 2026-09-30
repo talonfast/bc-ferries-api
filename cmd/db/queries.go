@@ -78,17 +78,37 @@ func getOperationalCapacitySailings() []models.CapacityRoute {
 	return routes
 }
 
+// GetNorthernSailings serves the northern timetables in the capacity wire
+// shape. There are no current conditions for these routes, so every sailing
+// carries explicit unavailable operational provenance.
+func GetNorthernSailings() []models.CapacityRoute {
+	return mergeCapacityRoutes(nil, getScheduleRoutes(northernScheduleQuery))
+}
+
 func getOfficialScheduleRoutes() []models.OfficialScheduleRoute {
-	var routes []models.OfficialScheduleRoute
-	rows, err := Conn.Query(`
+	return getScheduleRoutes(officialScheduleQuery)
+}
+
+// Table names cannot be query parameters, so each source is a fixed query.
+const scheduleQueryColumns = `
 		SELECT route_code, from_terminal_code, to_terminal_code, service_date,
-		       sailing_duration, sailings, source_url, scraped_at
-		FROM official_schedule_routes
+		       sailing_duration, sailings, source_url, scraped_at`
+
+const scheduleQueryDates = `
 		WHERE service_date BETWEEN
 		      (CURRENT_TIMESTAMP AT TIME ZONE 'America/Vancouver')::date
 		      AND (CURRENT_TIMESTAMP AT TIME ZONE 'America/Vancouver')::date + 1
-		ORDER BY route_code, service_date
-	`)
+		ORDER BY route_code, service_date`
+
+const officialScheduleQuery = scheduleQueryColumns + `
+		FROM official_schedule_routes` + scheduleQueryDates
+
+const northernScheduleQuery = scheduleQueryColumns + `
+		FROM northern_schedule_routes` + scheduleQueryDates
+
+func getScheduleRoutes(query string) []models.OfficialScheduleRoute {
+	var routes []models.OfficialScheduleRoute
+	rows, err := Conn.Query(query)
 	if err != nil {
 		log.Printf("getOfficialScheduleRoutes: query failed: %v", err)
 		return routes

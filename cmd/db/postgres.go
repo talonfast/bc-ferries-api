@@ -47,6 +47,17 @@ func Migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS official_schedule_routes_service_date_idx
 			ON official_schedule_routes (service_date)`,
+		`CREATE TABLE IF NOT EXISTS northern_schedule_routes (
+			route_code VARCHAR(6) NOT NULL,
+			service_date DATE NOT NULL,
+			from_terminal_code VARCHAR(3) NOT NULL,
+			to_terminal_code VARCHAR(3) NOT NULL,
+			sailing_duration VARCHAR(7) NOT NULL,
+			sailings JSONB NOT NULL,
+			source_url TEXT NOT NULL,
+			scraped_at TIMESTAMPTZ NOT NULL,
+			PRIMARY KEY (route_code, service_date)
+		)`,
 	}
 
 	for _, statement := range statements {
