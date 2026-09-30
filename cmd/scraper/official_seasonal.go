@@ -128,14 +128,12 @@ func parseSeasonalRowsForDate(
 		return nil, "", false
 	}
 
-	var scheduleTable *goquery.Selection
-	document.Find("table.table-seasonal-schedule").EachWithBreak(func(_ int, table *goquery.Selection) bool {
-		if table.Find("thead tr[data-schedule-day], thead [data-schedule-day], thead h4, thead b").Length() == 0 {
-			return true
-		}
-		scheduleTable = table
-		return false
-	})
+	scheduleTable, structured := onwardScheduleTable(document)
+	if scheduleTable == nil && structured {
+		// The onward block is published but has no timetable: no sailings in
+		// this direction remain in the season.
+		return []seasonalRow{}, "", true
+	}
 	if scheduleTable == nil || scheduleTable.Length() == 0 {
 		return nil, "", false
 	}
@@ -247,6 +245,43 @@ func parseSeasonalRowsForDate(
 		return []seasonalRow{}, "", true
 	}
 	return sailings, duration, !malformedCandidate && len(sailings) > 0 && duration != ""
+}
+
+func hasScheduleDayHeader(table *goquery.Selection) bool {
+	return table.Find("thead tr[data-schedule-day], thead [data-schedule-day], thead h4, thead b").Length() > 0
+}
+
+// onwardScheduleTable returns the timetable for the page's own direction.
+// Operator pages list an onward block and then a return block, each opened by
+// a collapse-header table; a block with no sailings left in the season keeps
+// its header but has no timetable. Taking the first timetable on the page
+// therefore read the return direction whenever the onward one was absent.
+// structured reports whether the page had those block headers at all; pages
+// without them fall back to the first timetable.
+func onwardScheduleTable(document *goquery.Document) (table *goquery.Selection, structured bool) {
+	blocks := 0
+	var first *goquery.Selection
+	document.Find("table.table-seasonal-schedule").EachWithBreak(func(_ int, candidate *goquery.Selection) bool {
+		if candidate.HasClass("schedule-collapse-header") {
+			blocks++
+			return blocks < 2
+		}
+		if !hasScheduleDayHeader(candidate) {
+			return true
+		}
+		if blocks == 1 {
+			table = candidate
+			return false
+		}
+		if first == nil {
+			first = candidate
+		}
+		return true
+	})
+	if blocks == 0 {
+		return first, false
+	}
+	return table, true
 }
 
 // seasonalRowStops reads the stop-details column: each stop is a paragraph
